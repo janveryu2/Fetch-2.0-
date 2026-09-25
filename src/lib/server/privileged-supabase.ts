@@ -235,3 +235,39 @@ export async function getAiUsageServer(params: {
   }
 }
 
+export async function deleteUserAccountServer(
+  userId: string
+): Promise<{ success: boolean; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  if (!privilegedClient) {
+    return {
+      success: false,
+      error: new Error("Privileged client unavailable for account deletion."),
+    };
+  }
+
+  try {
+    try {
+      const { data: files } = await privilegedClient.storage.from("study-sources").list(userId);
+      if (files && files.length > 0) {
+        const filePaths = files.map((f) => `${userId}/${f.name}`);
+        await privilegedClient.storage.from("study-sources").remove(filePaths);
+      }
+    } catch {
+      // Storage cleanup is best-effort
+    }
+
+    const { error: deleteError } = await privilegedClient.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      return { success: false, error: new Error(deleteError.message) };
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err : new Error("Failed to delete user account"),
+    };
+  }
+}
+
