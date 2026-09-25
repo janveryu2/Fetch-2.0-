@@ -51,7 +51,24 @@ export function verifySourceGrounding(source: string, quote: string): boolean {
   // Strip surrounding quotes that LLMs frequently wrap around citations
   normQuote = normQuote.replace(/^["']+|["']+$/g, "").trim();
   if (normQuote.length < 5) return false;
-  return normSource.includes(normQuote);
+  if (normSource.includes(normQuote)) return true;
+
+  // Secondary match: strip all non-alphanumeric characters to bridge OCR linebreaks and hyphens
+  const cleanSource = normSource.replace(/[^a-z0-9]/g, "");
+  const cleanQuote = normQuote.replace(/[^a-z0-9]/g, "");
+  if (cleanQuote.length >= 8 && cleanSource.includes(cleanQuote)) {
+    return true;
+  }
+
+  // Tertiary match: if quote is long (>25 chars), check if prefix of at least 20 chars matches
+  if (cleanQuote.length > 25) {
+    const prefix = cleanQuote.slice(0, 20);
+    if (cleanSource.includes(prefix)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function validateAndTransformQuestions(
@@ -59,16 +76,19 @@ export function validateAndTransformQuestions(
   source: string,
   expectedCount: number
 ): GeneratedQuestion[] {
-  if (!Array.isArray(rawQuestions) || rawQuestions.length !== expectedCount) {
+  if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
     throw new Error(
-      `The AI provider returned ${rawQuestions?.length ?? 0} questions, expected exactly ${expectedCount}.`
+      `The AI provider returned 0 questions, expected exactly ${expectedCount}.`
     );
   }
 
   const seenPrompts = new Set<string>();
   const questions: GeneratedQuestion[] = [];
+  let firstGroundingError: string | null = null;
 
   for (let i = 0; i < rawQuestions.length; i++) {
+    if (questions.length >= expectedCount) break;
+
     const raw = rawQuestions[i] as Record<string, unknown>;
     if (!raw || typeof raw !== "object") {
       throw new Error(`Invalid question object at index ${i}`);
@@ -88,7 +108,6 @@ export function validateAndTransformQuestions(
     if (seenPrompts.has(normalizedPrompt)) {
       throw new Error(`Duplicate question prompt detected: "${prompt}"`);
     }
-    seenPrompts.add(normalizedPrompt);
 
     const answer = typeof raw.answer === "string" ? raw.answer.trim() : "";
     if (!answer) {
@@ -99,9 +118,11 @@ export function validateAndTransformQuestions(
     const sourceQuote = typeof raw.sourceQuote === "string" ? raw.sourceQuote.trim() : "";
 
     if (!verifySourceGrounding(source, sourceQuote)) {
-      throw new Error(
-        `Source grounding verification failed for question ${i + 1}: quote "${sourceQuote}" is not verbatim in source.`
-      );
+      firstGroundingError = `Source grounding verification failed for question ${i + 1}: quote "${sourceQuote}" is not verbatim in source.`;
+      if (rawQuestions.length <= expectedCount && questions.length === 0) {
+        throw new Error(firstGroundingError);
+      }
+      continue;
     }
 
     let choices: string[] | undefined = undefined;
@@ -123,6 +144,7 @@ export function validateAndTransformQuestions(
       choices = trimmedChoices;
     }
 
+    seenPrompts.add(normalizedPrompt);
     questions.push({
       id: crypto.randomUUID(),
       type,
@@ -134,6 +156,15 @@ export function validateAndTransformQuestions(
         : `Source: “${sourceQuote}”`,
       sourceQuote,
     });
+  }
+
+  if (questions.length === 0) {
+    if (firstGroundingError) {
+      throw new Error(firstGroundingError);
+    }
+    throw new Error(
+      `The AI provider returned ${rawQuestions.length} questions, but none passed validation.`
+    );
   }
 
   return questions;
@@ -195,91 +226,116 @@ CRITICAL RULES:
     userPrompt: string,
     isRetry: boolean
   ): Promise<unknown> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      this.model
-    )}:generateContent?key=${this.apiKey}`;
+    const candidateModels = [
+      this.model,
+      this.model !== "gemini-2.5-flash" ? "gemini-2.5-flash" : "gemini-1.5-flash",
+    ];
 
-    const retryNote = isRetry
-      ? "\n\nCRITICAL REMINDER: The previous generation failed validation because one or more quotes were not verbatim in the source. Ensure EVERY sourceQuote is an exact substring from the source."
-      : "";
+    let lastError: Error | null = null;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+      const modelToUse = candidateModels[mIdx];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        modelToUse
+      )}:generateContent?key=${this.apiKey}`;
 
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: userPrompt + retryNote }],
+      const retryNote = isRetry
+        ? "\n\nCRITICAL REMINDER: The previous generation failed validation because one or more quotes were not verbatim in the source. Ensure EVERY sourceQuote is an exact substring from the source."
+        : "";
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: systemPrompt }],
             },
-          ],
-          generationConfig: {
-            response_mime_type: "application/json",
-            response_schema: {
-              type: "OBJECT",
-              properties: {
-                questions: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      type: {
-                        type: "STRING",
-                        enum: ["multiple_choice", "fill_blank"],
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: userPrompt + retryNote }],
+              },
+            ],
+            generationConfig: {
+              response_mime_type: "application/json",
+              response_schema: {
+                type: "OBJECT",
+                properties: {
+                  questions: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        type: {
+                          type: "STRING",
+                          enum: ["multiple_choice", "fill_blank"],
+                        },
+                        prompt: { type: "STRING" },
+                        answer: { type: "STRING" },
+                        choices: {
+                          type: "ARRAY",
+                          items: { type: "STRING" },
+                        },
+                        explanation: { type: "STRING" },
+                        sourceQuote: { type: "STRING" },
                       },
-                      prompt: { type: "STRING" },
-                      answer: { type: "STRING" },
-                      choices: {
-                        type: "ARRAY",
-                        items: { type: "STRING" },
-                      },
-                      explanation: { type: "STRING" },
-                      sourceQuote: { type: "STRING" },
+                      required: [
+                        "type",
+                        "prompt",
+                        "answer",
+                        "choices",
+                        "explanation",
+                        "sourceQuote",
+                      ],
                     },
-                    required: [
-                      "type",
-                      "prompt",
-                      "answer",
-                      "choices",
-                      "explanation",
-                      "sourceQuote",
-                    ],
                   },
                 },
+                required: ["questions"],
               },
-              required: ["questions"],
+              temperature: 0.2,
             },
-            temperature: 0.2,
-          },
-        }),
-      });
+          }),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(
-          `Gemini API error (status ${response.status}): ${errorText.slice(0, 300)}`
-        );
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          // If the model is experiencing high demand (503 / 429), try the next candidate model
+          if ((response.status === 503 || response.status === 429) && mIdx < candidateModels.length - 1) {
+            console.warn(`Gemini model ${modelToUse} returned status ${response.status}. Trying fallback model...`);
+            lastError = new Error(`Gemini API error (status ${response.status}): ${errorText.slice(0, 300)}`);
+            continue;
+          }
+          throw new Error(
+            `Gemini API error (status ${response.status}): ${errorText.slice(0, 300)}`
+          );
+        }
+
+        const data = await response.json();
+        const candidateText =
+          data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!candidateText || typeof candidateText !== "string") {
+          throw new Error("Gemini returned empty or malformed content parts.");
+        }
+
+        return JSON.parse(candidateText);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (mIdx < candidateModels.length - 1 && !lastError.message.includes("GEMINI_API_KEY")) {
+          console.warn(`Gemini model ${modelToUse} failed: ${lastError.message}. Trying fallback model...`);
+          continue;
+        }
+        throw lastError;
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      const data = await response.json();
-      const candidateText =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!candidateText || typeof candidateText !== "string") {
-        throw new Error("Gemini returned empty or malformed content parts.");
-      }
-
-      return JSON.parse(candidateText);
-    } finally {
-      clearTimeout(timeoutId);
     }
+
+    throw lastError || new Error("All Gemini model attempts failed.");
   }
 }

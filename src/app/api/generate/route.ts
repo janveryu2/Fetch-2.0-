@@ -12,6 +12,8 @@ import {
 import { createApiErrorResponse } from "@/lib/api-errors";
 import type { Question } from "@/lib/demo-types";
 
+export const maxDuration = 60;
+
 export const requestSchema = z.object({
   title: z.string().trim().min(2).max(80),
   source: z.string().trim().min(80).max(20_000),

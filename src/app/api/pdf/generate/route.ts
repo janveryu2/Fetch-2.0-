@@ -13,6 +13,8 @@ import { createApiErrorResponse } from "@/lib/api-errors";
 import { fixtureQuestions } from "@/app/api/generate/route";
 import type { Question } from "@/lib/demo-types";
 
+export const maxDuration = 60;
+
 export const pdfGenerateSchema = z.object({
   docId: z.string().uuid(),
   title: z.string().trim().min(2).max(80),
@@ -149,6 +151,7 @@ export async function POST(request: Request) {
       questions = await generator.generate(generationInput);
       provider = "gemini";
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       console.error("Gemini PDF study-pack generation failed", error);
       await releaseAiGenerationServer({
         ownerId: account.userId,
@@ -159,7 +162,7 @@ export async function POST(request: Request) {
       });
       return createApiErrorResponse(
         "GENERATION_FAILED",
-        "Generation failed safely. Your quota was not charged; please retry.",
+        `Generation failed safely (${errorMsg.slice(0, 80)}). Your quota was not charged; please retry.`,
         502
       );
     }
