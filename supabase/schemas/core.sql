@@ -187,7 +187,13 @@ create table if not exists public.study_session_drafts (
   pack_id uuid not null references public.study_packs(id) on delete cascade,
   answers jsonb not null default '[]'::jsonb,
   current_position integer not null default 0,
+  current_answer text not null default '',
+  checked boolean not null default false,
+  feedback jsonb default null,
+  client_attempt_id uuid default null,
+  pack_fingerprint text default null,
   revision integer not null default 1,
+  expires_at timestamptz not null default (now() + interval '30 days'),
   updated_at timestamptz not null default now(),
   unique (user_id, pack_id)
 );
@@ -222,6 +228,7 @@ create index if not exists study_session_answers_session_ordinal_idx on public.s
 create index if not exists study_packs_owner_archived_idx on public.study_packs(owner_id, archived_at);
 create index if not exists study_sessions_user_completed_idx on public.study_sessions(user_id, completed_at desc);
 create index if not exists study_session_drafts_user_pack_idx on public.study_session_drafts(user_id, pack_id);
+create index if not exists study_session_drafts_user_pack_expires_idx on public.study_session_drafts(user_id, pack_id, expires_at);
 create index if not exists source_documents_owner_idx on private.source_documents(owner_id);
 
 alter table public.profiles enable row level security;

@@ -7,6 +7,7 @@ export type ApiErrorCode =
   | "QUOTA_EXCEEDED"
   | "REQUEST_IN_PROGRESS"
   | "ATTEMPT_CONFLICT"
+  | "DRAFT_CONFLICT"
   | "GENERATION_FAILED"
   | "PROVIDER_UNAVAILABLE"
   | "STORAGE_UNAVAILABLE"
@@ -70,4 +71,19 @@ export function storageUnavailableError(message = "FETCH could not save your dat
 export function attemptConflictError(message = "This attempt ID was already used with different answers. Please start a new attempt.", requestId?: string) {
   return createApiErrorResponse("ATTEMPT_CONFLICT", message, 409, requestId);
 }
+
+export function draftConflictError(
+  message = "Cloud draft has been updated on another device.",
+  cloudRevision?: number,
+  requestId?: string
+) {
+  return createApiErrorResponse(
+    "DRAFT_CONFLICT",
+    message,
+    409,
+    requestId,
+    cloudRevision !== undefined ? { cloudRevision } : undefined
+  );
+}
+
 

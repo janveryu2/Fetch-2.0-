@@ -19,6 +19,7 @@ export type DemoState = {
   syncError: string;
   storageWarning: string;
   tutorAvailable: boolean;
+  userId?: string;
   packs: StudyPack[];
   attempts: StudyAttempt[];
   events: CalendarEvent[];
@@ -35,10 +36,12 @@ const storageKey = "fetch-development-fixture-v1";
 export function DemoProvider({
   children,
   mode,
+  userId,
   tutorAvailable = false,
 }: {
   children: React.ReactNode;
   mode: "demo" | "account";
+  userId?: string;
   tutorAvailable?: boolean;
 }) {
   const [packs, setPacks] = useState<StudyPack[]>([]);
@@ -170,6 +173,7 @@ export function DemoProvider({
       syncError,
       storageWarning,
       tutorAvailable,
+      userId,
       packs,
       attempts,
       events,
@@ -185,6 +189,7 @@ export function DemoProvider({
       syncError,
       storageWarning,
       tutorAvailable,
+      userId,
       packs,
       attempts,
       events,

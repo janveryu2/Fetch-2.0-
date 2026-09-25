@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export function StudyPackDetail({ packId }: { packId: string }) {
-  const { packs, attempts, mode } = useDemo();
+  const { packs, attempts, mode, userId } = useDemo();
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [hasActiveDraft, setHasActiveDraft] = useState(false);
 
@@ -27,14 +27,15 @@ export function StudyPackDetail({ packId }: { packId: string }) {
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       if (pack) {
-        const result = loadStudySessionDraft(mode === "account" ? "account" : "demo", pack);
+        const scopeId = mode === "account" ? (userId || "account") : "demo";
+        const result = loadStudySessionDraft(scopeId, pack);
         if (result.success && !result.draft.isCompleted) {
           setHasActiveDraft(true);
         }
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [mode, pack]);
+  }, [mode, userId, pack]);
 
   if (!pack) {
     return (

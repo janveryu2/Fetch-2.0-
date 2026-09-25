@@ -29,6 +29,7 @@ export const studySessionDraftSchema = z.object({
       correct: z.boolean().optional(),
     }),
   ),
+  revision: z.number().int().min(1).optional(),
   startedAt: z.string(),
   updatedAt: z.string(),
   isCompleted: z.boolean().default(false),
@@ -256,3 +257,61 @@ export function getActiveDraftSnapshot(
 
   return cachedSnapshot.data;
 }
+
+export async function fetchCloudDraft(packId: string): Promise<StudySessionDraft | null> {
+  try {
+    const res = await fetch(`/api/study-drafts/${packId}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.draft ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function syncDraftToCloud(
+  draft: StudySessionDraft,
+  expectedRevision?: number
+): Promise<{ success: boolean; conflict?: boolean; cloudRevision?: number; draft?: StudySessionDraft }> {
+  try {
+    const res = await fetch(`/api/study-drafts/${draft.packId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientAttemptId: draft.clientAttemptId,
+        revision: draft.revision ?? 1,
+        expectedRevision,
+        currentIndex: draft.currentIndex,
+        currentAnswer: draft.currentAnswer,
+        checked: draft.checked,
+        feedback: draft.feedback,
+        submittedAnswers: draft.submittedAnswers,
+        packFingerprint: draft.packFingerprint,
+      }),
+    });
+
+    if (res.status === 409) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, conflict: true, cloudRevision: data.cloudRevision };
+    }
+
+    if (!res.ok) {
+      return { success: false };
+    }
+
+    const data = await res.json();
+    return { success: true, draft: data.draft };
+  } catch {
+    return { success: false };
+  }
+}
+
+export async function deleteCloudDraft(packId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/study-drafts/${packId}`, { method: "DELETE" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+

@@ -16,6 +16,9 @@ import {
   computePackFingerprint,
   loadStudySessionDraft,
   saveStudySessionDraft,
+  fetchCloudDraft,
+  syncDraftToCloud,
+  deleteCloudDraft,
   type StudySessionDraft,
 } from "@/lib/study-session-draft";
 import { Badge } from "@/components/ui/badge";
@@ -24,10 +27,11 @@ import { Button } from "@/components/ui/button";
 type AnswerFeedback = { correct: boolean; answer?: string; explanation: string };
 
 export function StudySession({ packId }: { packId: string }) {
-  const { packs, addAttempt, mode, status } = useDemo();
+  const { packs, addAttempt, mode, status, userId } = useDemo();
   const pack = packs.find((item) => item.id === packId);
 
-  const scopeId = mode === "account" ? "account" : "demo";
+  const scopeId = mode === "account" ? (userId || "account") : "demo";
+  const cloudRevisionRef = useRef<number>(1);
   const [clientAttemptId, setClientAttemptId] = useState(() => crypto.randomUUID());
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState("");
@@ -58,8 +62,10 @@ export function StudySession({ packId }: { packId: string }) {
   // Check for existing draft on initial mount or when pack is ready
   useEffect(() => {
     if (!pack) return;
-    const frame = requestAnimationFrame(() => {
+    let active = true;
+    const frame = requestAnimationFrame(async () => {
       const result = loadStudySessionDraft(scopeId, pack);
+      let candidate: StudySessionDraft | null = null;
       if (
         result.success &&
         !result.draft.isCompleted &&
@@ -68,12 +74,41 @@ export function StudySession({ packId }: { packId: string }) {
           result.draft.checked ||
           result.draft.currentAnswer.trim().length > 0)
       ) {
-        setPendingDraft(result.draft);
+        candidate = result.draft;
+      }
+
+      if (mode === "account") {
+        try {
+          const cloud = await fetchCloudDraft(pack.id);
+          if (!active) return;
+          if (cloud && !cloud.isCompleted) {
+            if (!candidate) {
+              candidate = cloud;
+            } else {
+              const localTime = new Date(candidate.updatedAt).getTime();
+              const cloudTime = new Date(cloud.updatedAt).getTime();
+              if ((cloud.revision ?? 1) > (candidate.revision ?? 1) || cloudTime > localTime) {
+                candidate = cloud;
+              }
+            }
+          }
+        } catch {
+          // Gracefully continue with local candidate
+        }
+      }
+
+      if (!active) return;
+      if (candidate) {
+        cloudRevisionRef.current = candidate.revision ?? 1;
+        setPendingDraft(candidate);
       }
       initialCheckDone.current = true;
     });
-    return () => cancelAnimationFrame(frame);
-  }, [pack, scopeId]);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [pack, scopeId, mode]);
 
   const question = pack?.questions[index];
   const localCorrect = useMemo(
@@ -96,7 +131,7 @@ export function StudySession({ packId }: { packId: string }) {
       return;
     }
 
-    saveStudySessionDraft({
+    const draftToSave: StudySessionDraft = {
       version: 1,
       sessionId: clientAttemptId,
       clientAttemptId,
@@ -109,10 +144,26 @@ export function StudySession({ packId }: { packId: string }) {
       checked,
       feedback,
       submittedAnswers,
+      revision: cloudRevisionRef.current,
       startedAt,
       updatedAt: new Date().toISOString(),
       isCompleted: false,
-    });
+    };
+
+    saveStudySessionDraft(draftToSave);
+
+    if (mode === "account") {
+      const timer = setTimeout(() => {
+        void syncDraftToCloud(draftToSave, cloudRevisionRef.current).then((res) => {
+          if (res.success && res.draft) {
+            cloudRevisionRef.current = res.draft.revision ?? (cloudRevisionRef.current + 1);
+          } else if (res.conflict) {
+            console.warn("Cloud draft conflict detected on sync", res.cloudRevision);
+          }
+        });
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
   }, [
     answer,
     checked,
@@ -120,6 +171,7 @@ export function StudySession({ packId }: { packId: string }) {
     feedback,
     finished,
     index,
+    mode,
     pack,
     packId,
     pendingDraft,
@@ -177,6 +229,9 @@ export function StudySession({ packId }: { packId: string }) {
 
   function handleStartFresh() {
     clearStudySessionDraft(scopeId, packId);
+    if (mode === "account") {
+      void deleteCloudDraft(packId);
+    }
     setPendingDraft(null);
   }
 
@@ -281,6 +336,9 @@ export function StudySession({ packId }: { packId: string }) {
           addAttempt({ ...data.attempt, packId, packTitle: activePack.title });
           setSaved(true);
           clearStudySessionDraft(scopeId, packId);
+          if (mode === "account") {
+            void deleteCloudDraft(packId);
+          }
           setFinished(true);
 
           requestAnimationFrame(() => {

@@ -15,7 +15,7 @@ export default async function WorkspaceLayout({
     account && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL,
   );
   return (
-    <DemoProvider key={mode} mode={mode} tutorAvailable={tutorAvailable}>
+    <DemoProvider key={mode} mode={mode} userId={account?.userId} tutorAvailable={tutorAvailable}>
       <TimerProvider>
         <MusicProvider>
           <AppShell>{children}</AppShell>
