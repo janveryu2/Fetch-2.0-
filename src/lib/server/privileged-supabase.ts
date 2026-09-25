@@ -91,3 +91,147 @@ export async function persistStudyPackServer(
     };
   }
 }
+
+export type ReservationResult =
+  | { status: "committed"; packId: string; requestId: string }
+  | { status: "in_progress"; fencingToken: number; requestId: string }
+  | {
+      status: "reserved";
+      fencingToken: number;
+      monthKey: string;
+      allowance: number;
+      remaining: number;
+    };
+
+export async function reserveAiGenerationServer(params: {
+  ownerId: string;
+  requestId: string;
+  payloadHash: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: ReservationResult | null; error: Error | null; code?: string }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available for quota reservation.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("reserve_ai_generation", {
+      p_owner_id: params.ownerId,
+      p_request_id: params.requestId,
+      p_payload_hash: params.payloadHash,
+    });
+
+    if (error) {
+      const err = new Error(error.message);
+      return { data: null, error: err, code: error.code };
+    }
+
+    return { data: data as ReservationResult, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Unknown reservation error"),
+    };
+  }
+}
+
+export async function commitAiGenerationServer(params: {
+  ownerId: string;
+  requestId: string;
+  fencingToken: number;
+  packId: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { status: string; packId: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available for quota commit.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("commit_ai_generation", {
+      p_owner_id: params.ownerId,
+      p_request_id: params.requestId,
+      p_fencing_token: params.fencingToken,
+      p_pack_id: params.packId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { status: string; packId: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Unknown commit error"),
+    };
+  }
+}
+
+export async function releaseAiGenerationServer(params: {
+  ownerId: string;
+  requestId: string;
+  fencingToken: number;
+  failureClass?: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { status: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available for quota release.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("release_ai_generation", {
+      p_owner_id: params.ownerId,
+      p_request_id: params.requestId,
+      p_fencing_token: params.fencingToken,
+      p_failure_class: params.failureClass || "unknown",
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { status: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Unknown release error"),
+    };
+  }
+}
+
+export interface AiUsageData {
+  allowance: number;
+  used: number;
+  reserved: number;
+  remaining: number;
+  monthKey: string;
+}
+
+export async function getAiUsageServer(params: {
+  ownerId?: string;
+  client: SupabaseClient;
+}): Promise<{ data: AiUsageData | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("get_ai_usage");
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as AiUsageData, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Unknown usage fetch error"),
+    };
+  }
+}
+

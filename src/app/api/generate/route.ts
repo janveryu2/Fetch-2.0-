@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import { GeminiStudyPackProvider } from "@/lib/ai/gemini-study-pack";
 import { generateStudyPack } from "@/lib/ai/study-pack";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
-import { persistStudyPackServer } from "@/lib/server/privileged-supabase";
+import {
+  persistStudyPackServer,
+  reserveAiGenerationServer,
+  commitAiGenerationServer,
+  releaseAiGenerationServer,
+} from "@/lib/server/privileged-supabase";
 import { createApiErrorResponse } from "@/lib/api-errors";
 import type { Question } from "@/lib/demo-types";
 
@@ -10,6 +16,7 @@ export const requestSchema = z.object({
   title: z.string().trim().min(2).max(80),
   source: z.string().trim().min(80).max(20_000),
   count: z.number().int().min(3).max(20),
+  requestId: z.string().uuid().optional(),
 });
 
 export function fixtureQuestions(source: string, count: number): Question[] {
@@ -56,26 +63,133 @@ export async function POST(request: Request) {
     });
   }
 
+  const requestId = parsed.data.requestId || crypto.randomUUID();
+  const payloadHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        title: parsed.data.title,
+        source: parsed.data.source,
+        count: parsed.data.count,
+      })
+    )
+    .digest("hex");
+
+  // Reserve generation quota atomically with idempotency checks
+  const reservation = await reserveAiGenerationServer({
+    ownerId: account.userId,
+    requestId,
+    payloadHash,
+    fallbackClient: account.supabase,
+  });
+
+  if (reservation.error || !reservation.data) {
+    if (
+      reservation.code === "42901" ||
+      reservation.error?.message.includes("Monthly AI StudyPack allowance reached")
+    ) {
+      return createApiErrorResponse(
+        "QUOTA_EXCEEDED",
+        "You have reached your monthly allowance of 15 AI StudyPacks. Allowance resets at the start of next month.",
+        429
+      );
+    }
+    if (
+      reservation.code === "23505" ||
+      reservation.error?.message.includes("conflict")
+    ) {
+      return createApiErrorResponse(
+        "REQUEST_CONFLICT",
+        "A different generation request has already been submitted with this request ID.",
+        409
+      );
+    }
+    console.error("Quota reservation failed", reservation.error?.message);
+    return createApiErrorResponse(
+      "STORAGE_UNAVAILABLE",
+      "Unable to reserve generation quota. Please retry.",
+      503
+    );
+  }
+
+  if (reservation.data.status === "committed") {
+    // Idempotent retry: return previously completed pack
+    const { data: existingPack } = await account.supabase
+      .from("study_packs")
+      .select("id, questions")
+      .eq("id", reservation.data.packId)
+      .maybeSingle();
+
+    return Response.json({
+      provider: "gemini",
+      packId: reservation.data.packId,
+      questions: (existingPack?.questions as Question[]) || [],
+    });
+  }
+
+  if (reservation.data.status === "in_progress") {
+    return createApiErrorResponse(
+      "REQUEST_IN_PROGRESS",
+      "This StudyPack generation is already in progress. Please wait a moment.",
+      409
+    );
+  }
+
+  const fencingToken = reservation.data.fencingToken;
+
   let questions: Question[];
-  let provider: "openai" | "development-fixture";
+  let provider: "gemini" | "openai" | "development-fixture";
   let warning: string | undefined;
 
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL) {
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const generator = new GeminiStudyPackProvider();
+      questions = await generator.generate(parsed.data);
+      provider = "gemini";
+    } catch (error) {
+      console.error("Gemini study-pack generation failed", error);
+      await releaseAiGenerationServer({
+        ownerId: account.userId,
+        requestId,
+        fencingToken,
+        failureClass: "gemini_generation_failed",
+        fallbackClient: account.supabase,
+      });
+      return createApiErrorResponse(
+        "GENERATION_FAILED",
+        "Generation failed safely. Your material was not saved and your quota was not charged; please retry.",
+        502
+      );
+    }
+  } else if (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL) {
     try {
       questions = await generateStudyPack(parsed.data);
       provider = "openai";
     } catch (error) {
-      console.error("Study-pack generation failed", error);
+      console.error("OpenAI study-pack generation failed", error);
+      await releaseAiGenerationServer({
+        ownerId: account.userId,
+        requestId,
+        fencingToken,
+        failureClass: "openai_generation_failed",
+        fallbackClient: account.supabase,
+      });
       return createApiErrorResponse(
         "GENERATION_FAILED",
-        "Generation failed safely. Your material was not saved; please retry.",
+        "Generation failed safely. Your material was not saved and your quota was not charged; please retry.",
         502
       );
     }
   } else if (process.env.NODE_ENV === "production" && process.env.FETCH_ENABLE_DEV_FIXTURE !== "true") {
+    await releaseAiGenerationServer({
+      ownerId: account.userId,
+      requestId,
+      fencingToken,
+      failureClass: "provider_unavailable",
+      fallbackClient: account.supabase,
+    });
     return createApiErrorResponse(
       "PROVIDER_UNAVAILABLE",
-      "AI generation is not configured. Add both OPENAI_API_KEY and OPENAI_MODEL.",
+      "AI generation is not configured. Add GEMINI_API_KEY.",
       503
     );
   } else {
@@ -89,7 +203,12 @@ export async function POST(request: Request) {
     ownerId: account.userId,
     title: parsed.data.title,
     sourceType: "text",
-    sourceLabel: provider === "openai" ? "Pasted text · AI generated" : "Pasted text · development fixture",
+    sourceLabel:
+      provider === "gemini"
+        ? "Pasted text · Gemini AI"
+        : provider === "openai"
+        ? "Pasted text · AI generated"
+        : "Pasted text · development fixture",
     sourceContent: parsed.data.source,
     contentHash,
     questions,
@@ -98,12 +217,28 @@ export async function POST(request: Request) {
 
   if (persistError || !saved) {
     console.error("StudyPack persistence failed", persistError?.message);
+    await releaseAiGenerationServer({
+      ownerId: account.userId,
+      requestId,
+      fencingToken,
+      failureClass: "persistence_failed",
+      fallbackClient: account.supabase,
+    });
     return createApiErrorResponse(
       "STORAGE_UNAVAILABLE",
-      "FETCH generated the questions but could not save this StudyPack. Apply the account database schema and retry.",
+      "FETCH generated the questions but could not save this StudyPack. Your quota was not charged; please retry.",
       503
     );
   }
+
+  // Atomically commit the generation and count towards quota
+  await commitAiGenerationServer({
+    ownerId: account.userId,
+    requestId,
+    fencingToken,
+    packId: saved.id,
+    fallbackClient: account.supabase,
+  });
 
   return Response.json({
     provider,

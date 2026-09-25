@@ -33,6 +33,22 @@ export function CreatePackPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [activeRequestId, setActiveRequestId] = useState(() => crypto.randomUUID());
+  const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
+
+  // Fetch quota balance for authenticated account users
+  useState(() => {
+    if (mode === "account") {
+      fetch("/api/ai-usage")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && typeof data.remaining === "number") {
+            setAiUsage({ remaining: data.remaining, allowance: data.allowance });
+          }
+        })
+        .catch(() => {});
+    }
+  });
 
   const charactersNeeded = Math.max(0, 80 - source.trim().length);
   const isGenerateDisabled =
@@ -55,17 +71,23 @@ export function CreatePackPanel() {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), source: source.trim(), count }),
+        body: JSON.stringify({
+          title: title.trim(),
+          source: source.trim(),
+          count,
+          requestId: activeRequestId,
+        }),
       });
       const data = (await response.json()) as {
         error?: string;
+        message?: string;
         questions?: StudyQuestion[];
         packId?: string;
         provider?: string;
         warning?: string;
       };
       if (!response.ok || !data.questions) {
-        throw new Error(data.error || "FETCH could not create this StudyPack.");
+        throw new Error(data.message || data.error || "FETCH could not create this StudyPack.");
       }
 
       if (data.warning) {
@@ -75,12 +97,17 @@ export function CreatePackPanel() {
       const id = mode === "account" ? data.packId : crypto.randomUUID();
       if (!id) throw new Error("FETCH could not confirm that this StudyPack was saved.");
 
+      // Success: generate fresh requestId for the next session
+      setActiveRequestId(crypto.randomUUID());
+
       addPack({
         id,
         title: title.trim(),
         sourceLabel:
           mode === "account"
-            ? data.provider === "openai"
+            ? data.provider === "gemini"
+              ? "Pasted text · Gemini AI"
+              : data.provider === "openai"
               ? "Pasted text · AI generated"
               : "Pasted text · development fixture"
             : "Pasted text · development fixture",
@@ -134,9 +161,16 @@ export function CreatePackPanel() {
             Add material, choose a size, and generate focused practice.
           </p>
         </div>
-        <Badge tone={mode === "account" ? "success" : "neutral"}>
-          {mode === "account" ? "Connected account" : "Browser demo"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {mode === "account" && aiUsage && (
+            <span className="text-xs font-bold text-[var(--fetch-blue-700)] bg-[var(--fetch-blue-50)] px-2.5 py-1 rounded-full border border-[var(--fetch-blue-200)]">
+              {aiUsage.remaining} of {aiUsage.allowance} AI packs left this month
+            </span>
+          )}
+          <Badge tone={mode === "account" ? "success" : "neutral"}>
+            {mode === "account" ? "Connected account" : "Browser demo"}
+          </Badge>
+        </div>
       </div>
 
       <div className="p-5 sm:p-7">
