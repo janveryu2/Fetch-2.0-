@@ -1,4 +1,6 @@
+import { type NextRequest } from "next/server";
 import { getAuthenticatedRequestContext, unauthorizedResponse } from "@/lib/supabase/authorization";
+import { extractRequestId, logger } from "@/lib/server/logger";
 
 type WorkspaceQuestionRow = {
   id: string;
@@ -9,10 +11,16 @@ type WorkspaceQuestionRow = {
   choices: unknown;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const requestId = extractRequestId(request);
   const context = await getAuthenticatedRequestContext();
   if (!context) return unauthorizedResponse();
   const { supabase, userId } = context;
+
+  // Bounded pagination parameters
+  const { searchParams } = new URL(request.url);
+  const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "50", 10) || 50, 1), 100);
+  const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10) || 0, 0);
 
   const [packResult, attemptResult, eventResult] = await Promise.all([
     supabase
@@ -20,7 +28,8 @@ export async function GET() {
       .select("id,title,source_type,source_label,status,created_at")
       .eq("owner_id", userId)
       .eq("status", "ready")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1),
     supabase
       .from("study_sessions")
       .select("id,pack_id,score,correct_count,question_count,completed_at")
@@ -31,18 +40,28 @@ export async function GET() {
       .from("calendar_events")
       .select("id,title,event_type,event_date,start_time,end_time,all_day,color,subject,location,pack_id")
       .eq("user_id", userId)
-      .order("event_date", { ascending: true }),
+      .order("event_date", { ascending: true })
+      .limit(100),
   ]);
 
   if (packResult.error || attemptResult.error || eventResult.error) {
-    console.error("Account workspace data could not be loaded", {
-      packs: packResult.error?.code,
-      attempts: attemptResult.error?.code,
-      events: eventResult.error?.code,
+    logger.error("Account workspace data could not be loaded", undefined, {
+      requestId,
+      userId,
+      packsErrorCode: packResult.error?.code,
+      attemptsErrorCode: attemptResult.error?.code,
+      eventsErrorCode: eventResult.error?.code,
     });
-    return Response.json(
-      { error: "Account storage is not ready. Apply the FETCH database schema and try again." },
-      { status: 503 },
+    return new Response(
+      JSON.stringify({
+        error: "Account storage is not ready. Apply the FETCH database schema and try again.",
+        code: "STORAGE_UNAVAILABLE",
+        requestId,
+      }),
+      {
+        status: 503,
+        headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+      }
     );
   }
 
@@ -56,9 +75,24 @@ export async function GET() {
         .in("pack_id", packIds)
         .order("position", { ascending: true })
     : { data: [], error: null };
+
   if (questionsResult.error) {
-    console.error("Account StudyPack questions could not be loaded", questionsResult.error.code);
-    return Response.json({ error: "StudyPacks could not be loaded right now." }, { status: 503 });
+    logger.error("Account StudyPack questions could not be loaded", undefined, {
+      requestId,
+      userId,
+      questionsErrorCode: questionsResult.error.code,
+    });
+    return new Response(
+      JSON.stringify({
+        error: "StudyPacks could not be loaded right now.",
+        code: "STORAGE_UNAVAILABLE",
+        requestId,
+      }),
+      {
+        status: 503,
+        headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+      }
+    );
   }
 
   const questionsByPack = new Map<string, WorkspaceQuestionRow[]>();
@@ -69,7 +103,7 @@ export async function GET() {
   }
   const packTitles = new Map(packRows.map((pack) => [pack.id, pack.title]));
 
-  return Response.json({
+  const responsePayload = {
     packs: packRows.map((pack) => ({
       id: pack.id,
       title: pack.title,
@@ -105,5 +139,18 @@ export async function GET() {
       location: event.location,
       packId: event.pack_id ?? undefined,
     })),
+    pagination: {
+      limit,
+      offset,
+      count: packRows.length,
+    },
+  };
+
+  return new Response(JSON.stringify(responsePayload), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Request-Id": requestId,
+    },
   });
 }
