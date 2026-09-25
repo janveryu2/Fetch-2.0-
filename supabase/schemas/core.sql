@@ -2862,7 +2862,7 @@ grant execute on function public.update_account_preferences(boolean, boolean, bo
 create index if not exists idx_live_rooms_host_status on public.live_rooms(host_id, status);
 create index if not exists idx_live_rooms_join_code on public.live_rooms(join_code);
 create index if not exists idx_live_room_members_composite on public.live_room_members(room_id, user_id);
-create index if not exists idx_live_room_questions_composite on public.live_room_questions(room_id, question_index);
+create index if not exists idx_live_room_questions_composite on private.live_room_questions(room_id, question_index);
 create index if not exists idx_live_room_answers_composite on public.live_room_answers(room_id, question_index);
 create index if not exists idx_friend_requests_composite on public.friend_requests(sender_id, recipient_id);
 create index if not exists idx_calendar_events_user_starts on public.calendar_events(user_id, starts_at);
