@@ -209,13 +209,22 @@ create table if not exists private.source_documents (
   id uuid primary key default pg_catalog.gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
   storage_path text not null,
+  file_name text,
   file_size_bytes bigint not null,
   content_hash text not null,
+  page_count integer,
+  extracted_text text,
   extraction_status text not null default 'pending' check (extraction_status in ('pending', 'extracted', 'failed')),
   linked_pack_id uuid references public.study_packs(id) on delete set null,
+  failure_reason text,
   cleanup_state text not null default 'retained' check (cleanup_state in ('retained', 'cleaned', 'failed')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+create index if not exists idx_source_documents_linked_pack
+  on private.source_documents(linked_pack_id)
+  where linked_pack_id is not null;
 
 create index if not exists study_packs_owner_idx on public.study_packs(owner_id);
 create index if not exists questions_owner_idx on public.questions(owner_id);
@@ -1450,5 +1459,156 @@ grant execute on function private.get_ai_usage(uuid) to postgres, service_role, 
 
 revoke all on function public.get_ai_usage() from public, anon;
 grant execute on function public.get_ai_usage() to authenticated, service_role;
+
+-- Storage Bucket setup for study-sources
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('study-sources', 'study-sources', false, 10485760, array['application/pdf'])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = 10485760,
+  allowed_mime_types = array['application/pdf'];
+
+-- Storage RLS Policies
+drop policy if exists "Users can upload their own source documents" on storage.objects;
+create policy "Users can upload their own source documents"
+on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'study-sources' and
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users can read their own source documents" on storage.objects;
+create policy "Users can read their own source documents"
+on storage.objects for select
+to authenticated
+using (
+  bucket_id = 'study-sources' and
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users can delete their own source documents" on storage.objects;
+create policy "Users can delete their own source documents"
+on storage.objects for delete
+to authenticated
+using (
+  bucket_id = 'study-sources' and
+  (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create or replace function public.register_source_document(
+  p_storage_path text,
+  p_file_name text,
+  p_file_size bigint,
+  p_content_hash text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_doc_id uuid;
+begin
+  if v_uid is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  insert into private.source_documents (
+    owner_id, storage_path, file_name, file_size_bytes, content_hash, extraction_status
+  )
+  values (
+    v_uid, p_storage_path, p_file_name, p_file_size, p_content_hash, 'pending'
+  )
+  returning id into v_doc_id;
+
+  return pg_catalog.jsonb_build_object('id', v_doc_id, 'status', 'pending');
+end;
+$$;
+
+revoke all on function public.register_source_document(text, text, bigint, text) from public, anon;
+grant execute on function public.register_source_document(text, text, bigint, text) to authenticated, service_role;
+
+create or replace function public.update_source_document(
+  p_doc_id uuid,
+  p_extraction_status text,
+  p_extracted_text text default null,
+  p_page_count integer default null,
+  p_linked_pack_id uuid default null,
+  p_failure_reason text default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_doc private.source_documents%rowtype;
+begin
+  if v_uid is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  select * into v_doc from private.source_documents
+  where id = p_doc_id and owner_id = v_uid
+  for update;
+
+  if not found then
+    raise exception 'Source document not found' using errcode = '42501';
+  end if;
+
+  update private.source_documents
+  set extraction_status = p_extraction_status,
+      extracted_text = coalesce(p_extracted_text, extracted_text),
+      page_count = coalesce(p_page_count, page_count),
+      linked_pack_id = coalesce(p_linked_pack_id, linked_pack_id),
+      failure_reason = coalesce(p_failure_reason, failure_reason),
+      updated_at = now()
+  where id = p_doc_id;
+
+  return pg_catalog.jsonb_build_object('id', p_doc_id, 'status', p_extraction_status);
+end;
+$$;
+
+revoke all on function public.update_source_document(uuid, text, text, integer, uuid, text) from public, anon;
+grant execute on function public.update_source_document(uuid, text, text, integer, uuid, text) to authenticated, service_role;
+
+create or replace function public.get_source_document(p_doc_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_doc private.source_documents%rowtype;
+begin
+  if v_uid is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  select * into v_doc from private.source_documents
+  where id = p_doc_id and owner_id = v_uid;
+
+  if not found then
+    return null;
+  end if;
+
+  return pg_catalog.jsonb_build_object(
+    'id', v_doc.id,
+    'fileName', v_doc.file_name,
+    'extractedText', v_doc.extracted_text,
+    'pageCount', v_doc.page_count,
+    'contentHash', v_doc.content_hash,
+    'status', v_doc.extraction_status,
+    'linkedPackId', v_doc.linked_pack_id
+  );
+end;
+$$;
+
+revoke all on function public.get_source_document(uuid) from public, anon;
+grant execute on function public.get_source_document(uuid) to authenticated, service_role;
+
+
 
 

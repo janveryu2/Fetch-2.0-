@@ -16,25 +16,37 @@ import { useDemo } from "@/components/app/demo-provider";
 import type { StudyQuestion } from "@/lib/demo-types";
 import { cn } from "@/lib/cn";
 
-const tabs = [
-  { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
-  { id: "pdf", label: "PDF", status: "Coming soon", icon: FilePdf },
-  { id: "url", label: "Link", status: "Coming soon", icon: LinkSimple },
-] as const;
-
 export function CreatePackPanel() {
   const router = useRouter();
   const { addPack, mode } = useDemo();
+  const tabs = [
+    { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
+    {
+      id: "pdf",
+      label: "PDF",
+      status: mode === "account" ? "Available" : "Sign in",
+      icon: FilePdf,
+    },
+    { id: "url", label: "Link", status: "Coming soon", icon: LinkSimple },
+  ] as const;
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("paste");
   const [title, setTitle] = useState("My study pack");
   const [source, setSource] = useState("");
-  const [fileName, setFileName] = useState("");
   const [count, setCount] = useState(6);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [activeRequestId, setActiveRequestId] = useState(() => crypto.randomUUID());
   const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
+
+  const [pdfDoc, setPdfDoc] = useState<{
+    docId: string;
+    fileName: string;
+    pageCount: number;
+    characterCount: number;
+    textPreview: string;
+  } | null>(null);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
 
   // Fetch quota balance for authenticated account users
   useState(() => {
@@ -52,20 +64,123 @@ export function CreatePackPanel() {
 
   const charactersNeeded = Math.max(0, 80 - source.trim().length);
   const isGenerateDisabled =
-    tab !== "paste" ||
     loading ||
+    uploadingPdf ||
     title.trim().length < 2 ||
-    source.trim().length < 80;
+    (tab === "paste" && source.trim().length < 80) ||
+    (tab === "pdf" && (!pdfDoc || mode !== "account")) ||
+    tab === "url";
+
+  async function handlePdfUpload(file: File) {
+    if (!file) return;
+    setError("");
+    setWarning("");
+    if (mode !== "account") {
+      setError("Sign in with an account to upload PDFs and generate StudyPacks.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("PDF file exceeds the 10 MiB limit.");
+      return;
+    }
+    setUploadingPdf(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/pdf/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to upload and parse PDF.");
+      }
+      setPdfDoc({
+        docId: data.docId,
+        fileName: data.fileName,
+        pageCount: data.pageCount,
+        characterCount: data.characterCount,
+        textPreview: data.textPreview,
+      });
+      if (title === "My study pack" || !title.trim()) {
+        const cleanName = data.fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ");
+        setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "PDF upload failed.");
+      setPdfDoc(null);
+    } finally {
+      setUploadingPdf(false);
+    }
+  }
 
   async function generate() {
     setError("");
     setWarning("");
-    if (tab !== "paste") {
-      setError(
-        "PDF and URL extraction require production services. Paste text is fully available today.",
-      );
+
+    if (tab === "pdf") {
+      if (!pdfDoc) {
+        setError("Please upload a PDF document first.");
+        return;
+      }
+      setLoading(true);
+      try {
+        const response = await fetch("/api/pdf/generate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            docId: pdfDoc.docId,
+            title: title.trim(),
+            count,
+            requestId: activeRequestId,
+          }),
+        });
+        const data = (await response.json()) as {
+          error?: string;
+          message?: string;
+          questions?: StudyQuestion[];
+          packId?: string;
+          provider?: string;
+          warning?: string;
+        };
+        if (!response.ok || !data.questions) {
+          throw new Error(data.message || data.error || "FETCH could not create this StudyPack from PDF.");
+        }
+
+        if (data.warning) {
+          setWarning(data.warning);
+        }
+
+        const id = data.packId || crypto.randomUUID();
+        setActiveRequestId(crypto.randomUUID());
+
+        addPack({
+          id,
+          title: title.trim(),
+          sourceLabel: `PDF: ${pdfDoc.fileName}`,
+          createdAt: new Date().toISOString(),
+          questions: data.questions,
+          progress: 0,
+        });
+
+        router.push(`/app/study-packs/${id}`);
+      } catch (reason) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "FETCH could not create this StudyPack from PDF."
+        );
+      } finally {
+        setLoading(false);
+      }
       return;
     }
+
+    if (tab !== "paste") {
+      setError("URL extraction is in development. Paste text or upload a PDF to generate.");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/generate", {
@@ -279,23 +394,72 @@ export function CreatePackPanel() {
         )}
 
         {tab === "pdf" && (
-          <label className="mt-5 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-6 text-center text-[var(--fetch-blue-900)]">
-            <UploadSimple size={34} />
-            <span className="mt-3 font-extrabold">PDF import preview</span>
-            <span className="mt-1 text-sm">
-              Extraction is in active development. Please paste text for now.
-            </span>
-            <input
-              disabled
-              type="file"
-              accept="application/pdf"
-              className="sr-only"
-              onChange={(event) =>
-                setFileName(event.target.files?.[0]?.name || "")
-              }
-            />
-            {fileName && <Badge className="mt-3">{fileName}</Badge>}
-          </label>
+          <div className="mt-5">
+            {mode !== "account" ? (
+              <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
+                <FilePdf size={38} className="text-[var(--text-tertiary)]" />
+                <span className="mt-3 font-extrabold text-[var(--text-primary)]">
+                  Account required for PDF import
+                </span>
+                <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
+                  Sign in with an account to securely upload PDFs to your private library and generate custom StudyPacks.
+                </span>
+              </div>
+            ) : pdfDoc ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-800">
+                      <FilePdf size={28} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-emerald-950">{pdfDoc.fileName}</h4>
+                      <p className="text-xs text-emerald-800">
+                        {pdfDoc.pageCount} pages · {pdfDoc.characterCount.toLocaleString()} characters extracted
+                      </p>
+                    </div>
+                  </div>
+                  <label className="cursor-pointer inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50">
+                    Replace PDF
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handlePdfUpload(f);
+                      }}
+                    />
+                  </label>
+                </div>
+                {pdfDoc.textPreview && (
+                  <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-[var(--text-secondary)] italic border border-emerald-100">
+                    &ldquo;{pdfDoc.textPreview}&rdquo;
+                  </div>
+                )}
+              </div>
+            ) : (
+              <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-6 text-center text-[var(--fetch-blue-900)] hover:bg-[var(--fetch-blue-100)]/50 transition-colors">
+                <UploadSimple size={34} />
+                <span className="mt-3 font-extrabold">
+                  {uploadingPdf ? "Extracting PDF text..." : "Choose or drag a PDF document"}
+                </span>
+                <span className="mt-1 text-sm text-[var(--fetch-blue-800)]">
+                  Up to 10 MiB, maximum 25 pages. Extracted privately into your account.
+                </span>
+                <input
+                  disabled={uploadingPdf}
+                  type="file"
+                  accept="application/pdf"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const f = event.target.files?.[0];
+                    if (f) handlePdfUpload(f);
+                  }}
+                />
+              </label>
+            )}
+          </div>
         )}
 
         {tab === "url" && (
