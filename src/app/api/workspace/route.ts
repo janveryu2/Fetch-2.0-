@@ -25,7 +25,8 @@ export async function GET() {
       .from("study_sessions")
       .select("id,pack_id,score,correct_count,question_count,completed_at")
       .eq("user_id", userId)
-      .order("completed_at", { ascending: false }),
+      .order("completed_at", { ascending: false })
+      .limit(50),
     supabase
       .from("calendar_events")
       .select("id,title,event_type,event_date,start_time,end_time,all_day,color,subject,location,pack_id")
