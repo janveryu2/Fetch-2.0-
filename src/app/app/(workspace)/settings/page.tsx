@@ -13,11 +13,13 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { mode, packs, attempts, events } = useDemo();
   const [name, setName] = useState("FETCH Student");
   const [username, setUsername] = useState("fetch_student");
@@ -266,7 +268,7 @@ export default function SettingsPage() {
       } catch {
         // Signout best effort
       }
-      window.location.href = "/auth?message=account-deleted";
+      router.replace("/auth?message=account-deleted");
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Failed to permanently delete account.");
       setDeleting(false);

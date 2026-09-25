@@ -70,6 +70,30 @@ describe("Phase 13: Privacy-safe Structured Logging", () => {
     const generatedId = extractRequestId(reqWithoutHeader);
     expect(generatedId.startsWith("req_")).toBe(true);
   });
+
+  it("logs structured JSON via info, warn, and error", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    logger.info("TEST_INFO", { requestId: "req-1", userId: "u-1" });
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const infoPayload = JSON.parse(infoSpy.mock.calls[0]?.[0] as string);
+    expect(infoPayload.event).toBe("TEST_INFO");
+    expect(infoPayload.requestId).toBe("req-1");
+
+    logger.warn("TEST_WARN", { requestId: "req-2" });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    logger.error("TEST_ERR", new Error("Simulated failure"), { requestId: "req-3" });
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const errPayload = JSON.parse(errorSpy.mock.calls[0]?.[0] as string);
+    expect(errPayload.error.message).toBe("Simulated failure");
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
 });
 
 describe("Phase 13: Server-side Rate Limiting", () => {
