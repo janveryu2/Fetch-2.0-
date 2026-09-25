@@ -9,6 +9,7 @@ import {
   Target,
 } from "@phosphor-icons/react";
 import { useDemo } from "@/components/app/demo-provider";
+import { useStudentPreferences } from "@/components/app/student-preferences-provider";
 import { Button } from "@/components/ui/button";
 import { getStudyRecommendation } from "@/lib/study-recommendation";
 import { getActiveDraftSnapshot } from "@/lib/study-session-draft";
@@ -25,10 +26,12 @@ function getServerSnapshot() {
 }
 
 export default function ProgressPage() {
-  const { attempts, packs, mode, status } = useDemo();
+  const { attempts, packs, mode, userId, status } = useDemo();
+  const { preferences } = useStudentPreferences();
+  const scopeId = mode === "account" && userId ? userId : "demo";
   const activeDraft = useSyncExternalStore(
     subscribeToStorage,
-    () => getActiveDraftSnapshot(mode === "account" ? "account" : "demo"),
+    () => getActiveDraftSnapshot(scopeId),
     getServerSnapshot,
   );
 
@@ -45,10 +48,12 @@ export default function ProgressPage() {
   );
 
   const recommendation = getStudyRecommendation({
-    scopeId: mode === "account" ? "account" : "demo",
+    scopeId,
     packs,
     attempts,
     activeDraft,
+    studyGoal: preferences?.studyGoal,
+    primarySubject: preferences?.primarySubject,
   });
 
   return (

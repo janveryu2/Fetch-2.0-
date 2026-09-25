@@ -183,4 +183,39 @@ describe("getStudyRecommendation", () => {
     expect(rec.score).toBe(95);
     expect(rec.actionLabel).toBe("Study again");
   });
+
+  it("tailors empty-state recommendation to exam, understand, and habit goals", () => {
+    const examRec = getStudyRecommendation({
+      scopeId: "demo",
+      packs: [],
+      attempts: [],
+      studyGoal: "exam",
+      primarySubject: "Biology",
+    });
+    expect(examRec.type).toBe("create_pack");
+    expect(examRec.headline).toBe("Prepare for your Biology exam");
+    expect(examRec.badge).toBe("Exam prep");
+
+    const understandRec = getStudyRecommendation({
+      scopeId: "demo",
+      packs: [],
+      attempts: [],
+      studyGoal: "understand",
+      primarySubject: "History",
+    });
+    expect(understandRec.type).toBe("create_pack");
+    expect(understandRec.headline).toBe("Master difficult History concepts");
+    expect(understandRec.badge).toBe("Deep understanding");
+
+    const habitRec = getStudyRecommendation({
+      scopeId: "demo",
+      packs: [],
+      attempts: [],
+      studyGoal: "habit",
+      primarySubject: "Spanish",
+    });
+    expect(habitRec.type).toBe("create_pack");
+    expect(habitRec.headline).toBe("Build a daily Spanish study habit");
+    expect(habitRec.badge).toBe("Daily habit");
+  });
 });

@@ -5,6 +5,7 @@ import {
   Bell,
   CheckCircle,
   DownloadSimple,
+  GraduationCap,
   Moon,
   ShieldCheck,
   Sun,
@@ -17,6 +18,8 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
+import { useStudentPreferences } from "@/components/app/student-preferences-provider";
+import type { FocusMinutes, StudyGoal } from "@/lib/student-preferences";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -35,6 +38,15 @@ export default function SettingsPage() {
   const [studyReminders, setStudyReminders] = useState(true);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
+
+  // Student Preferences State
+  const { setPreferences } = useStudentPreferences();
+  const [studySubject, setStudySubject] = useState("");
+  const [studyGoal, setStudyGoal] = useState<StudyGoal | null>(null);
+  const [studyFocusMinutes, setStudyFocusMinutes] = useState<FocusMinutes>(25);
+  const [savingStudyPrefs, setSavingStudyPrefs] = useState(false);
+  const [studyPrefsSaved, setStudyPrefsSaved] = useState(false);
+  const [studyPrefsError, setStudyPrefsError] = useState("");
 
   // Export State
   const [exporting, setExporting] = useState(false);
@@ -85,6 +97,17 @@ export default function SettingsPage() {
               setDiscoverable(data.preferences.discoverable ?? true);
               setAllowDirectMessages(data.preferences.allow_direct_messages ?? true);
               setStudyReminders(data.preferences.study_reminders ?? true);
+            }
+          })
+          .catch(() => {});
+
+        fetch("/api/account/study-preferences")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.preferences) {
+              setStudySubject(data.preferences.primarySubject || "");
+              setStudyGoal(data.preferences.studyGoal || null);
+              setStudyFocusMinutes(data.preferences.focusMinutes || 25);
             }
           })
           .catch(() => {});
@@ -192,6 +215,54 @@ export default function SettingsPage() {
       setErrorMessage(err instanceof Error ? err.message : "Failed to update preferences.");
     } finally {
       setSavingPrefs(false);
+    }
+  }
+
+  async function saveStudyPreferences() {
+    if (savingStudyPrefs) return;
+    setSavingStudyPrefs(true);
+    setStudyPrefsError("");
+    setStudyPrefsSaved(false);
+    try {
+      const cleanSubject = studySubject.trim();
+      if (mode === "demo") {
+        setPreferences({
+          primarySubject: cleanSubject.length > 0 ? cleanSubject : null,
+          studyGoal: studyGoal,
+          focusMinutes: studyFocusMinutes,
+          onboardingStatus: "completed",
+          onboardingVersion: 1,
+          completedAt: new Date().toISOString(),
+        });
+        setStudyPrefsSaved(true);
+        setNotice("Study preferences saved.");
+        return;
+      }
+
+      const res = await fetch("/api/account/study-preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primarySubject: cleanSubject.length > 0 ? cleanSubject : null,
+          studyGoal: studyGoal,
+          focusMinutes: studyFocusMinutes,
+          action: "save",
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save study preferences.");
+      }
+      if (data?.preferences) {
+        setPreferences(data.preferences);
+      }
+      setStudyPrefsSaved(true);
+      setNotice("Study preferences saved successfully.");
+      router.refresh();
+    } catch (err) {
+      setStudyPrefsError(err instanceof Error ? err.message : "Failed to save study preferences.");
+    } finally {
+      setSavingStudyPrefs(false);
     }
   }
 
@@ -466,6 +537,90 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        <section className="surface-card p-6">
+          <div className="flex items-center gap-3">
+            <GraduationCap size={25} className="text-[var(--fetch-blue-600)]" />
+            <h2 className="font-display text-2xl font-semibold">Study preferences</h2>
+          </div>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
+            Customize your primary subject, learning goal, and default Pomodoro focus duration.
+          </p>
+
+          {studyPrefsError && (
+            <p role="alert" className="mt-4 text-sm font-bold text-[var(--danger)]">
+              {studyPrefsError}
+            </p>
+          )}
+
+          <div className="mt-6 space-y-4">
+            <label className="block font-extrabold">
+              Primary subject or course
+              <input
+                type="text"
+                value={studySubject}
+                maxLength={100}
+                placeholder="e.g. Biology, History, Programming"
+                onChange={(e) => {
+                  setStudySubject(e.target.value);
+                  setStudyPrefsSaved(false);
+                }}
+                className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 text-sm"
+              />
+            </label>
+
+            <label className="block font-extrabold">
+              Study goal
+              <select
+                value={studyGoal ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setStudyGoal(val === "exam" || val === "understand" || val === "habit" ? val : null);
+                  setStudyPrefsSaved(false);
+                }}
+                className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 text-sm"
+              >
+                <option value="">No specific goal</option>
+                <option value="exam">Prepare for an exam</option>
+                <option value="understand">Understand difficult material</option>
+                <option value="habit">Build a study habit</option>
+              </select>
+            </label>
+
+            <label className="block font-extrabold">
+              Default Pomodoro focus duration
+              <select
+                value={studyFocusMinutes}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val === 15 || val === 25 || val === 45) {
+                    setStudyFocusMinutes(val as FocusMinutes);
+                    setStudyPrefsSaved(false);
+                  }
+                }}
+                className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 text-sm"
+              >
+                <option value={15}>15 minutes (short sprint)</option>
+                <option value={25}>25 minutes (standard Pomodoro)</option>
+                <option value={45}>45 minutes (deep session)</option>
+              </select>
+            </label>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                onClick={() => void saveStudyPreferences()}
+                disabled={savingStudyPrefs}
+              >
+                {savingStudyPrefs ? "Saving preferences…" : "Save study preferences"}
+              </Button>
+              {studyPrefsSaved && (
+                <span role="status" className="flex items-center gap-1 text-sm font-bold text-[var(--success)]">
+                  <CheckCircle size={18} /> Study preferences saved
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
 
         <section className="surface-card p-6">
           <div className="flex items-center gap-3">

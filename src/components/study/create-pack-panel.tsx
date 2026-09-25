@@ -9,16 +9,25 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
+import { useStudentPreferences } from "@/components/app/student-preferences-provider";
 import type { StudyQuestion } from "@/lib/demo-types";
 import { cn } from "@/lib/cn";
+import {
+  computePayloadFingerprint,
+  resolveRequestId,
+  rotateRequestState,
+  createInitialRequestState,
+  type RequestState,
+} from "@/lib/study/request-lifecycle";
 
 export function CreatePackPanel() {
   const router = useRouter();
   const { addPack, mode } = useDemo();
+  const { preferences } = useStudentPreferences();
   const tabs = [
     { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
     {
@@ -36,7 +45,7 @@ export function CreatePackPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [activeRequestId, setActiveRequestId] = useState(() => crypto.randomUUID());
+  const [requestState, setRequestState] = useState<RequestState>(createInitialRequestState);
   const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
 
   const [pdfDoc, setPdfDoc] = useState<{
@@ -49,7 +58,7 @@ export function CreatePackPanel() {
   const [uploadingPdf, setUploadingPdf] = useState(false);
 
   // Fetch quota balance for authenticated account users
-  useState(() => {
+  useEffect(() => {
     if (mode === "account") {
       fetch("/api/ai-usage")
         .then((res) => (res.ok ? res.json() : null))
@@ -60,7 +69,7 @@ export function CreatePackPanel() {
         })
         .catch(() => {});
     }
-  });
+  }, [mode]);
 
   const charactersNeeded = Math.max(0, 80 - source.trim().length);
   const isGenerateDisabled =
@@ -125,6 +134,15 @@ export function CreatePackPanel() {
       }
       setLoading(true);
       try {
+        const fingerprint = computePayloadFingerprint({
+          mode: "pdf",
+          docId: pdfDoc.docId,
+          title,
+          count,
+        });
+        const { requestId: reqId, nextState } = resolveRequestId(requestState, fingerprint);
+        setRequestState(nextState);
+
         const response = await fetch("/api/pdf/generate", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -132,7 +150,7 @@ export function CreatePackPanel() {
             docId: pdfDoc.docId,
             title: title.trim(),
             count,
-            requestId: activeRequestId,
+            requestId: reqId,
           }),
         });
         const data = (await response.json()) as {
@@ -152,7 +170,7 @@ export function CreatePackPanel() {
         }
 
         const id = data.packId || crypto.randomUUID();
-        setActiveRequestId(crypto.randomUUID());
+        setRequestState(rotateRequestState());
 
         addPack({
           id,
@@ -183,6 +201,15 @@ export function CreatePackPanel() {
 
     setLoading(true);
     try {
+      const fingerprint = computePayloadFingerprint({
+        mode: "paste",
+        title,
+        source,
+        count,
+      });
+      const { requestId: reqId, nextState } = resolveRequestId(requestState, fingerprint);
+      setRequestState(nextState);
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -190,7 +217,7 @@ export function CreatePackPanel() {
           title: title.trim(),
           source: source.trim(),
           count,
-          requestId: activeRequestId,
+          requestId: reqId,
         }),
       });
       const data = (await response.json()) as {
@@ -213,7 +240,7 @@ export function CreatePackPanel() {
       if (!id) throw new Error("FETCH could not confirm that this StudyPack was saved.");
 
       // Success: generate fresh requestId for the next session
-      setActiveRequestId(crypto.randomUUID());
+      setRequestState(rotateRequestState());
 
       addPack({
         id,
@@ -340,22 +367,40 @@ export function CreatePackPanel() {
           tabIndex={0}
           className="focus:outline-none"
         >
-          {tab !== "paste" && (
+          {tab === "url" && (
             <p className="notice mt-4" role="status">
-              {tab === "pdf" ? "PDF" : "Link"} import is coming soon. Paste your
-              material as text to create a pack today.
+              Link import is coming soon. Paste your material as text or upload a PDF to create a pack today.
             </p>
           )}
 
-        <label className="mt-5 block font-extrabold">
-          StudyPack name
+        <div className="mt-5">
+          <div className="flex items-center justify-between">
+            <label htmlFor="pack-title-input" className="block font-extrabold">
+              StudyPack name
+            </label>
+            {preferences?.primarySubject && (
+              <span className="text-xs font-semibold text-[var(--fetch-blue-700)]">
+                Focus: {preferences.primarySubject}
+              </span>
+            )}
+          </div>
           <input
+            id="pack-title-input"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             maxLength={80}
             className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4"
           />
-        </label>
+          {preferences?.primarySubject && title === "My study pack" && (
+            <button
+              type="button"
+              onClick={() => setTitle(`${preferences.primarySubject} Notes`)}
+              className="mt-1.5 block text-xs font-bold text-[var(--fetch-blue-700)] underline cursor-pointer"
+            >
+              Use suggestion: {preferences.primarySubject} Notes
+            </button>
+          )}
+        </div>
 
         {tab === "paste" && (
           <label className="mt-5 block font-extrabold">

@@ -20,6 +20,39 @@ export interface StudyPackGenerator {
   generate(input: StudyPackGeneratorInput): Promise<GeneratedQuestion[]>;
 }
 
+export type GeminiFailureClass =
+  | "GROUNDING_FAILED"
+  | "WRONG_QUESTION_COUNT"
+  | "INVALID_CHOICES"
+  | "MALFORMED_PROVIDER_OUTPUT"
+  | "PROVIDER_UNAVAILABLE"
+  | "PROVIDER_QUOTA_EXCEEDED"
+  | "CONFIG_ERROR"
+  | "TIMEOUT"
+  | "UNKNOWN_ERROR";
+
+export class GeminiStudyPackError extends Error {
+  public readonly classification: GeminiFailureClass;
+  public readonly httpStatus?: number;
+  public readonly validationStage?: string;
+
+  constructor(
+    message: string,
+    classification: GeminiFailureClass,
+    options?: { httpStatus?: number; validationStage?: string; cause?: unknown }
+  ) {
+    super(message, { cause: options?.cause });
+    this.name = "GeminiStudyPackError";
+    this.classification = classification;
+    this.httpStatus = options?.httpStatus;
+    this.validationStage = options?.validationStage;
+  }
+}
+
+export function sanitizeErrorMessage(msg: string): string {
+  return msg.replace(/key=[^&\s"'`]+/gi, "key=[REDACTED]");
+}
+
 export const rawGeneratedPackSchema = z.object({
   questions: z.array(
     z.object({
@@ -53,6 +86,27 @@ export function verifySourceGrounding(source: string, quote: string): boolean {
   if (normQuote.length < 5) return false;
   if (normSource.includes(normQuote)) return true;
 
+  // Ellipsis match: if quote contains '...' or '…', verify each segment appears in source in order
+  if (normQuote.includes("...") || normQuote.includes("…")) {
+    const segments = normQuote
+      .split(/\.{3,}|…/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 6);
+    if (segments.length > 0) {
+      let lastIdx = 0;
+      let allSegmentsFound = true;
+      for (const seg of segments) {
+        const foundIdx = normSource.indexOf(seg, lastIdx);
+        if (foundIdx === -1) {
+          allSegmentsFound = false;
+          break;
+        }
+        lastIdx = foundIdx + seg.length;
+      }
+      if (allSegmentsFound) return true;
+    }
+  }
+
   // Secondary match: strip all non-alphanumeric characters to bridge OCR linebreaks and hyphens
   const cleanSource = normSource.replace(/[^a-z0-9]/g, "");
   const cleanQuote = normQuote.replace(/[^a-z0-9]/g, "");
@@ -77,8 +131,10 @@ export function validateAndTransformQuestions(
   expectedCount: number
 ): GeneratedQuestion[] {
   if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
-    throw new Error(
-      `The AI provider returned 0 questions, expected exactly ${expectedCount}.`
+    throw new GeminiStudyPackError(
+      `The AI provider returned 0 questions, expected exactly ${expectedCount}.`,
+      "WRONG_QUESTION_COUNT",
+      { validationStage: "question_count" }
     );
   }
 
@@ -91,37 +147,54 @@ export function validateAndTransformQuestions(
 
     const raw = rawQuestions[i] as Record<string, unknown>;
     if (!raw || typeof raw !== "object") {
-      throw new Error(`Invalid question object at index ${i}`);
+      throw new GeminiStudyPackError(
+        `Invalid question object at index ${i}`,
+        "MALFORMED_PROVIDER_OUTPUT",
+        { validationStage: "question_structure" }
+      );
     }
 
     const type = raw.type;
     if (type !== "multiple_choice" && type !== "fill_blank") {
-      throw new Error(`Invalid question type "${String(type)}" at index ${i}`);
+      throw new GeminiStudyPackError(
+        `Invalid question type "${String(type)}" at index ${i}`,
+        "MALFORMED_PROVIDER_OUTPUT",
+        { validationStage: "question_type" }
+      );
     }
 
     const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
     if (!prompt) {
-      throw new Error(`Question prompt at index ${i} is empty.`);
+      throw new GeminiStudyPackError(
+        `Question prompt at index ${i} is empty.`,
+        "MALFORMED_PROVIDER_OUTPUT",
+        { validationStage: "prompt" }
+      );
     }
 
     const normalizedPrompt = prompt.toLowerCase();
     if (seenPrompts.has(normalizedPrompt)) {
-      throw new Error(`Duplicate question prompt detected: "${prompt}"`);
+      throw new GeminiStudyPackError(
+        `Duplicate question prompt detected: "${prompt}"`,
+        "MALFORMED_PROVIDER_OUTPUT",
+        { validationStage: "duplicate_detection" }
+      );
     }
 
     const answer = typeof raw.answer === "string" ? raw.answer.trim() : "";
     if (!answer) {
-      throw new Error(`Question answer at index ${i} is empty.`);
+      throw new GeminiStudyPackError(
+        `Question answer at index ${i} is empty.`,
+        "MALFORMED_PROVIDER_OUTPUT",
+        { validationStage: "answer" }
+      );
     }
 
     const explanation = typeof raw.explanation === "string" ? raw.explanation.trim() : "";
     const sourceQuote = typeof raw.sourceQuote === "string" ? raw.sourceQuote.trim() : "";
 
     if (!verifySourceGrounding(source, sourceQuote)) {
-      firstGroundingError = `Source grounding verification failed for question ${i + 1}: quote "${sourceQuote}" is not verbatim in source.`;
-      if (rawQuestions.length <= expectedCount && questions.length === 0) {
-        throw new Error(firstGroundingError);
-      }
+      firstGroundingError = `Source grounding verification failed for question ${i + 1}: quote is not verbatim in source.`;
       continue;
     }
 
@@ -129,16 +202,26 @@ export function validateAndTransformQuestions(
     if (type === "multiple_choice") {
       const rawChoices = Array.isArray(raw.choices) ? raw.choices : [];
       if (rawChoices.length !== 4) {
-        throw new Error(`Multiple choice question ${i + 1} must have exactly 4 choices.`);
+        throw new GeminiStudyPackError(
+          `Multiple choice question ${i + 1} must have exactly 4 choices.`,
+          "INVALID_CHOICES",
+          { validationStage: "choices" }
+        );
       }
       const trimmedChoices = rawChoices.map((c) => (typeof c === "string" ? c.trim() : ""));
       const uniqueChoices = new Set(trimmedChoices.map((c) => c.toLowerCase()));
       if (uniqueChoices.size !== 4) {
-        throw new Error(`Multiple choice question ${i + 1} choices must all be unique.`);
+        throw new GeminiStudyPackError(
+          `Multiple choice question ${i + 1} choices must all be unique.`,
+          "INVALID_CHOICES",
+          { validationStage: "choices" }
+        );
       }
       if (!trimmedChoices.some((c) => c.toLowerCase() === answer.toLowerCase())) {
-        throw new Error(
-          `Multiple choice question ${i + 1} answer "${answer}" is not in the choices list.`
+        throw new GeminiStudyPackError(
+          `Multiple choice question ${i + 1} answer "${answer}" is not in the choices list.`,
+          "INVALID_CHOICES",
+          { validationStage: "choices" }
         );
       }
       choices = trimmedChoices;
@@ -158,12 +241,18 @@ export function validateAndTransformQuestions(
     });
   }
 
-  if (questions.length === 0) {
-    if (firstGroundingError) {
-      throw new Error(firstGroundingError);
+  if (questions.length < expectedCount) {
+    if (questions.length === 0 && firstGroundingError) {
+      throw new GeminiStudyPackError(
+        firstGroundingError,
+        "GROUNDING_FAILED",
+        { validationStage: "grounding" }
+      );
     }
-    throw new Error(
-      `The AI provider returned ${rawQuestions.length} questions, but none passed validation.`
+    throw new GeminiStudyPackError(
+      `The AI provider returned ${questions.length} valid questions, expected exactly ${expectedCount}.`,
+      firstGroundingError ? "GROUNDING_FAILED" : "WRONG_QUESTION_COUNT",
+      { validationStage: "question_count" }
     );
   }
 
@@ -183,7 +272,11 @@ export class GeminiStudyPackProvider implements StudyPackGenerator {
 
   async generate(input: StudyPackGeneratorInput): Promise<GeneratedQuestion[]> {
     if (!this.apiKey) {
-      throw new Error("GEMINI_API_KEY is not configured.");
+      throw new GeminiStudyPackError(
+        "GEMINI_API_KEY is not configured.",
+        "CONFIG_ERROR",
+        { validationStage: "initialization" }
+      );
     }
 
     const systemPrompt = `You create accurate, high-quality study questions using ONLY the supplied source text.
@@ -211,14 +304,18 @@ CRITICAL RULES:
         return validateAndTransformQuestions(parsed.questions, input.source, input.count);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        // If it's a network/config error, do not retry
-        if (lastError.message.includes("GEMINI_API_KEY") || lastError.message.includes("401") || lastError.message.includes("403")) {
+        // If it's a network/config error or unrecoverable error, do not retry
+        if (
+          lastError.message.includes("GEMINI_API_KEY") ||
+          lastError.message.includes("401") ||
+          lastError.message.includes("403")
+        ) {
           throw lastError;
         }
       }
     }
 
-    throw lastError || new Error("Gemini generation failed after retry.");
+    throw lastError || new GeminiStudyPackError("Gemini generation failed after retry.", "UNKNOWN_ERROR");
   }
 
   private async callGeminiApi(
@@ -228,7 +325,7 @@ CRITICAL RULES:
   ): Promise<unknown> {
     const candidateModels = [
       this.model,
-      this.model !== "gemini-2.5-flash" ? "gemini-2.5-flash" : "gemini-1.5-flash",
+      ...(this.model === "gemini-3.7-flash" ? ["gemini-2.5-flash"] : []),
     ];
 
     let lastError: Error | null = null;
@@ -297,33 +394,70 @@ CRITICAL RULES:
                 },
                 required: ["questions"],
               },
-              temperature: 0.2,
+              maxOutputTokens: 8192,
             },
           }),
         });
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "");
+          const isQuota = response.status === 429;
+          const isUnavailable = response.status === 503;
+
           // If the model is experiencing high demand (503 / 429), try the next candidate model
-          if ((response.status === 503 || response.status === 429) && mIdx < candidateModels.length - 1) {
+          if ((isUnavailable || isQuota) && mIdx < candidateModels.length - 1) {
             console.warn(`Gemini model ${modelToUse} returned status ${response.status}. Trying fallback model...`);
-            lastError = new Error(`Gemini API error (status ${response.status}): ${errorText.slice(0, 300)}`);
+            lastError = new GeminiStudyPackError(
+              `Gemini API error (status ${response.status}): ${sanitizeErrorMessage(errorText).slice(0, 300)}`,
+              isQuota ? "PROVIDER_QUOTA_EXCEEDED" : "PROVIDER_UNAVAILABLE",
+              { httpStatus: response.status, validationStage: "api_call" }
+            );
             continue;
           }
-          throw new Error(
-            `Gemini API error (status ${response.status}): ${errorText.slice(0, 300)}`
+
+          throw new GeminiStudyPackError(
+            `Gemini API error (status ${response.status}): ${sanitizeErrorMessage(errorText).slice(0, 300)}`,
+            isQuota ? "PROVIDER_QUOTA_EXCEEDED" : isUnavailable ? "PROVIDER_UNAVAILABLE" : "UNKNOWN_ERROR",
+            { httpStatus: response.status, validationStage: "api_call" }
           );
         }
 
         const data = await response.json();
-        const candidateText =
-          data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const textParts = parts
+          .filter(
+            (p: { thought?: boolean; text?: string }) =>
+              !p.thought && typeof p.text === "string"
+          )
+          .map((p: { text: string }) => p.text);
 
-        if (!candidateText || typeof candidateText !== "string") {
-          throw new Error("Gemini returned empty or malformed content parts.");
+        let candidateText = textParts.join("").trim();
+        if (!candidateText && parts.length > 0 && typeof parts[0]?.text === "string") {
+          candidateText = parts[0].text.trim();
         }
 
-        return JSON.parse(candidateText);
+        if (!candidateText) {
+          throw new GeminiStudyPackError(
+            "Gemini returned empty or malformed content parts.",
+            "MALFORMED_PROVIDER_OUTPUT",
+            { validationStage: "parsing" }
+          );
+        }
+
+        const cleanedText = candidateText
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```$/i, "")
+          .trim();
+
+        try {
+          return JSON.parse(cleanedText);
+        } catch (parseErr) {
+          throw new GeminiStudyPackError(
+            `Failed to parse JSON response from Gemini: ${(parseErr as Error).message}`,
+            "MALFORMED_PROVIDER_OUTPUT",
+            { validationStage: "json_parse", cause: parseErr }
+          );
+        }
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (mIdx < candidateModels.length - 1 && !lastError.message.includes("GEMINI_API_KEY")) {
@@ -336,6 +470,6 @@ CRITICAL RULES:
       }
     }
 
-    throw lastError || new Error("All Gemini model attempts failed.");
+    throw lastError || new GeminiStudyPackError("All Gemini model attempts failed.", "UNKNOWN_ERROR");
   }
 }

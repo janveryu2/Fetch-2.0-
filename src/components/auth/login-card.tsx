@@ -69,7 +69,7 @@ export function LoginCard({ authConfigured }: { authConfigured: boolean }) {
       const { error: authError } = await createClient().auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/app/home`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/app/start`,
         },
       });
       if (authError) throw authError;
@@ -92,7 +92,7 @@ export function LoginCard({ authConfigured }: { authConfigured: boolean }) {
         password: String(form.get("password") ?? ""),
       });
       if (authError) throw authError;
-      router.replace("/app/home");
+      router.replace("/app/start");
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "FETCH could not sign you in.");

@@ -70,14 +70,15 @@ const groups = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { packs, attempts, mode, status, syncError, storageWarning, retryLoad } = useDemo();
+  const { packs, attempts, mode, userId, status, syncError, storageWarning, retryLoad } = useDemo();
+  const scopeId = mode === "account" && userId ? userId : "demo";
   const activeDraft = useSyncExternalStore(
     subscribeToStorage,
-    () => getActiveDraftSnapshot(mode === "account" ? "account" : "demo"),
+    () => getActiveDraftSnapshot(scopeId),
     getServerSnapshot,
   );
   const studyDestination = resolveStudyDestination({
-    scopeId: mode === "account" ? "account" : "demo",
+    scopeId,
     packs,
     attempts,
     activeDraft,

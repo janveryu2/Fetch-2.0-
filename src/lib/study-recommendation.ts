@@ -36,8 +36,18 @@ export function getStudyRecommendation(params: {
   attempts: StudyAttempt[];
   activeDraft?: { packId: string; packTitle: string; progress: number } | null;
   threshold?: number;
+  studyGoal?: string | null;
+  primarySubject?: string | null;
 }): StudyRecommendation {
-  const { scopeId, packs, attempts, activeDraft, threshold = LOW_SCORE_THRESHOLD } = params;
+  const {
+    scopeId,
+    packs,
+    attempts,
+    activeDraft,
+    threshold = LOW_SCORE_THRESHOLD,
+    studyGoal,
+    primarySubject,
+  } = params;
 
   // 1. Check for active, unfinished draft (provided or read from storage)
   const draft = activeDraft !== undefined ? activeDraft : findActiveDraft(scopeId);
@@ -116,7 +126,40 @@ export function getStudyRecommendation(params: {
     };
   }
 
-  // 5. No packs and no attempts
+  // 5. No packs and no attempts - tailored to student goal
+  if (studyGoal === "exam") {
+    return {
+      type: "create_pack",
+      badge: "Exam prep",
+      headline: primarySubject ? `Prepare for your ${primarySubject} exam` : "Prepare for your upcoming exam",
+      reasonText: "Turn your exam study guide or lecture notes into practice questions to test what you know.",
+      actionLabel: "Create a StudyPack",
+      actionHref: "/app/home#add-material",
+    };
+  }
+
+  if (studyGoal === "understand") {
+    return {
+      type: "create_pack",
+      badge: "Deep understanding",
+      headline: primarySubject ? `Master difficult ${primarySubject} concepts` : "Understand difficult material",
+      reasonText: "Paste complex notes to break them down into bite-sized questions and clear explanations.",
+      actionLabel: "Create a StudyPack",
+      actionHref: "/app/home#add-material",
+    };
+  }
+
+  if (studyGoal === "habit") {
+    return {
+      type: "create_pack",
+      badge: "Daily habit",
+      headline: primarySubject ? `Build a daily ${primarySubject} study habit` : "Build a daily study habit",
+      reasonText: "Start with a short StudyPack to get your daily practice streak underway.",
+      actionLabel: "Create a StudyPack",
+      actionHref: "/app/home#add-material",
+    };
+  }
+
   return {
     type: "create_pack",
     badge: "Get started",

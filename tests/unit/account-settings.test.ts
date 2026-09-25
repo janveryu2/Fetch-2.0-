@@ -125,6 +125,18 @@ describe("GET /api/account/export", () => {
             data: { discoverable: true, allow_direct_messages: true, study_reminders: true },
           });
         }
+        if (name === "get_student_preferences") {
+          return Promise.resolve({
+            data: {
+              primarySubject: "Biology",
+              studyGoal: "exam",
+              focusMinutes: 25,
+              onboardingStatus: "completed",
+              onboardingVersion: 1,
+              completedAt: "2026-09-20T12:00:00Z",
+            },
+          });
+        }
         return Promise.resolve({ data: null });
       }),
     };
@@ -150,6 +162,9 @@ describe("GET /api/account/export", () => {
     expect(json.calendarEvents).toHaveLength(1);
     expect(json.friends).toHaveLength(1);
     expect(json.preferences.discoverable).toBe(true);
+    expect(json.studentPreferences).toBeDefined();
+    expect(json.studentPreferences.primarySubject).toBe("Biology");
+    expect(json.studentPreferences.onboardingStatus).toBe("completed");
   });
 });
 

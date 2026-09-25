@@ -87,6 +87,17 @@ export async function GET() {
       // Best-effort
     }
 
+    // 7. Student Preferences
+    let studentPreferencesData: Record<string, unknown> | null = null;
+    try {
+      const { data: studentPrefs } = await supabase.rpc("get_student_preferences");
+      if (studentPrefs) {
+        studentPreferencesData = studentPrefs as Record<string, unknown>;
+      }
+    } catch {
+      // Best-effort
+    }
+
     const exportPayload = {
       exportVersion: "3.0",
       exportedAt: new Date().toISOString(),
@@ -102,6 +113,14 @@ export async function GET() {
         discoverable: true,
         allow_direct_messages: true,
         study_reminders: true,
+      },
+      studentPreferences: studentPreferencesData || {
+        primarySubject: null,
+        studyGoal: null,
+        focusMinutes: 25,
+        onboardingStatus: "pending",
+        onboardingVersion: 1,
+        completedAt: null,
       },
       studyPacks: packs || [],
       studySessions: sessions || [],

@@ -72,11 +72,25 @@ export async function parsePdfBuffer(
     );
   }
 
-  // Bounded extraction to fit generator bounds
-  const boundedText =
-    combinedText.length > MAX_PDF_CHARACTERS
-      ? combinedText.slice(0, MAX_PDF_CHARACTERS)
-      : combinedText;
+  // Bounded extraction to fit generator bounds (maximum 20,000 characters)
+  let boundedText = combinedText;
+  if (combinedText.length > MAX_PDF_CHARACTERS) {
+    const rawSlice = combinedText.slice(0, MAX_PDF_CHARACTERS);
+    const sentenceEnd = Math.max(
+      rawSlice.lastIndexOf(". "),
+      rawSlice.lastIndexOf(".\n"),
+      rawSlice.lastIndexOf("? "),
+      rawSlice.lastIndexOf("! ")
+    );
+    if (sentenceEnd > MAX_PDF_CHARACTERS * 0.8) {
+      boundedText = rawSlice.slice(0, sentenceEnd + 1).trim();
+    } else {
+      const lastSpace = rawSlice.lastIndexOf(" ");
+      boundedText = (
+        lastSpace > MAX_PDF_CHARACTERS * 0.8 ? rawSlice.slice(0, lastSpace) : rawSlice
+      ).trim();
+    }
+  }
 
   const contentHash = createHash("sha256").update(buffer).digest("hex");
 

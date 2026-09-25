@@ -60,6 +60,7 @@ describe("safeNext open redirect protection", () => {
   });
 
   it("allows valid app destinations", () => {
+    expect(safeNext("/app/start")).toBe("/app/start");
     expect(safeNext("/app/home")).toBe("/app/home");
     expect(safeNext("/app/settings")).toBe("/app/settings");
     expect(safeNext("/app/reset-password")).toBe("/app/reset-password");
@@ -295,5 +296,33 @@ describe("GET /auth/callback handler", () => {
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
     expect(location).toBe("http://localhost:3000/app/home");
+  });
+
+  it("successfully redirects to /app/start when specified in next parameter", async () => {
+    mockExchangeCodeForSession.mockResolvedValueOnce({ error: null });
+    mockGetUser.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: "u-4",
+          email: "start@example.com",
+        },
+      },
+    });
+
+    mockFrom.mockReturnValue({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: { id: "u-4", username: "start_user", display_name: "Start" },
+          }),
+        }),
+      }),
+    });
+
+    const request = new NextRequest("http://localhost:3000/auth/callback?code=valid-code&next=/app/start");
+    const response = await GET(request);
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBe("http://localhost:3000/app/start");
   });
 });

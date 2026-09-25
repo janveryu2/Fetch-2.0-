@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { GeminiStudyPackProvider } from "@/lib/ai/gemini-study-pack";
+import {
+  GeminiStudyPackProvider,
+  GeminiStudyPackError,
+  sanitizeErrorMessage,
+} from "@/lib/ai/gemini-study-pack";
 import { generateStudyPack } from "@/lib/ai/study-pack";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
 import {
@@ -8,6 +12,7 @@ import {
   reserveAiGenerationServer,
   commitAiGenerationServer,
   releaseAiGenerationServer,
+  reconstructCommittedStudyPack,
 } from "@/lib/server/privileged-supabase";
 import { createApiErrorResponse } from "@/lib/api-errors";
 import type { Question } from "@/lib/demo-types";
@@ -114,17 +119,30 @@ export async function POST(request: Request) {
   }
 
   if (reservation.data.status === "committed") {
-    // Idempotent retry: return previously completed pack
-    const { data: existingPack } = await account.supabase
-      .from("study_packs")
-      .select("id, questions")
-      .eq("id", reservation.data.packId)
-      .maybeSingle();
+    // Idempotent retry: return previously completed pack reconstructed from authoritative questions table
+    const reconstructed = await reconstructCommittedStudyPack({
+      packId: reservation.data.packId,
+      ownerId: account.userId,
+      fallbackClient: account.supabase,
+    });
+
+    if (reconstructed.error || !reconstructed.data) {
+      console.error("[StudyPack Replay Error]", {
+        requestId,
+        packId: reservation.data.packId,
+        error: reconstructed.error?.message,
+      });
+      return createApiErrorResponse(
+        "STORAGE_UNAVAILABLE",
+        "Unable to retrieve previously generated StudyPack. Please retry.",
+        503
+      );
+    }
 
     return Response.json({
       provider: "gemini",
-      packId: reservation.data.packId,
-      questions: (existingPack?.questions as Question[]) || [],
+      packId: reconstructed.data.packId,
+      questions: reconstructed.data.questions,
     });
   }
 
@@ -142,20 +160,45 @@ export async function POST(request: Request) {
   let provider: "gemini" | "openai" | "development-fixture";
   let warning: string | undefined;
 
+  const startTime = Date.now();
+
   if (process.env.GEMINI_API_KEY) {
     try {
       const generator = new GeminiStudyPackProvider();
       questions = await generator.generate(parsed.data);
       provider = "gemini";
     } catch (error) {
-      console.error("Gemini study-pack generation failed", error);
+      const elapsedMs = Date.now() - startTime;
+      const failureClass =
+        error instanceof GeminiStudyPackError
+          ? error.classification
+          : "UNKNOWN_ERROR";
+      const httpStatus =
+        error instanceof GeminiStudyPackError ? error.httpStatus : undefined;
+      const validationStage =
+        error instanceof GeminiStudyPackError ? error.validationStage : undefined;
+
+      console.error("[Gemini study-pack generation failed]", {
+        requestId,
+        provider: "gemini",
+        model: process.env.GEMINI_STUDYPACK_MODEL || "gemini-3.7-flash",
+        errorClassification: failureClass,
+        httpStatus,
+        elapsedMs,
+        validationStage,
+        message: sanitizeErrorMessage(
+          error instanceof Error ? error.message : String(error)
+        ),
+      });
+
       await releaseAiGenerationServer({
         ownerId: account.userId,
         requestId,
         fencingToken,
-        failureClass: "gemini_generation_failed",
+        failureClass: failureClass.toLowerCase(),
         fallbackClient: account.supabase,
       });
+
       return createApiErrorResponse(
         "GENERATION_FAILED",
         "Generation failed safely. Your material was not saved and your quota was not charged; please retry.",

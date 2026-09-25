@@ -6,23 +6,23 @@ test.describe("Phase 14: Full Account & Workspace Journeys", () => {
   }) => {
     // 1. Home
     await page.goto("/app/home");
-    await expect(page.getByRole("heading", { name: /what are we learning today/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /ready to learn|what are we learning/i })).toBeVisible();
 
     // 2. Progress
     await page.goto("/app/progress");
-    await expect(page.getByRole("heading", { name: /study progress/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /your learning journey|study progress/i })).toBeVisible();
 
     // 3. Calendar
     await page.goto("/app/calendar");
-    await expect(page.getByRole("heading", { name: /study calendar/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /calendar/i })).toBeVisible();
 
     // 4. Friends & Messages
     await page.goto("/app/friends");
-    await expect(page.getByRole("heading", { name: /friends & study groups/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Better with study buddies." })).toBeVisible();
 
     // 5. Live Competition
     await page.goto("/app/live");
-    await expect(page.getByRole("heading", { name: /live study battle/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Study together/i })).toBeVisible();
 
     // 6. Settings
     await page.goto("/app/settings");
@@ -33,8 +33,8 @@ test.describe("Phase 14: Full Account & Workspace Journeys", () => {
     await page.goto("/app/settings");
 
     // Appearance toggle
-    const lightBtn = page.getByRole("button", { name: /light/i });
-    const darkBtn = page.getByRole("button", { name: /dark/i });
+    const lightBtn = page.getByRole("button", { name: "Light", exact: true });
+    const darkBtn = page.getByRole("button", { name: "Dark", exact: true });
     await expect(lightBtn).toBeVisible();
     await expect(darkBtn).toBeVisible();
 

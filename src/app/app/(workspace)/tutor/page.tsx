@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
+import { useStudentPreferences } from "@/components/app/student-preferences-provider";
 
 type TutorMessage = { role: "user" | "assistant"; content: string };
 type TutorConversation = {
@@ -199,12 +200,47 @@ export default function TutorPage() {
     input.current?.focus();
   }
 
+  const { preferences } = useStudentPreferences();
+  const subject = preferences?.primarySubject?.trim();
+  const goal = preferences?.studyGoal;
+
+  let personalizedStarter: { label: string; prompt: string } | null = null;
+  if (isTutorUsable && (subject || goal)) {
+    if (goal === "exam") {
+      personalizedStarter = {
+        label: subject ? `Review for ${subject} exam` : "Review for an exam",
+        prompt: subject
+          ? `Can you help me review the core concepts in ${subject} for my exam?`
+          : "Can you help me review the core concepts in what I'm studying for my exam?",
+      };
+    } else if (goal === "understand") {
+      personalizedStarter = {
+        label: subject ? `Understand difficult ${subject} ideas` : "Understand difficult ideas",
+        prompt: subject
+          ? `Can you help me understand the hardest idea in ${subject}?`
+          : "Can you help me understand the hardest idea in what I'm studying?",
+      };
+    } else if (goal === "habit") {
+      personalizedStarter = {
+        label: subject ? `Daily ${subject} practice question` : "Daily practice question",
+        prompt: subject
+          ? `Can you ask me a question to test my understanding of ${subject}?`
+          : "Can you ask me a question to test my understanding?",
+      };
+    } else if (subject) {
+      personalizedStarter = {
+        label: `Explore ${subject}`,
+        prompt: `Can you explain the foundational principles of ${subject}?`,
+      };
+    }
+  }
+
   const availability =
     mode !== "account"
       ? "Sign in to use the Tutor with your account and keep conversations saved."
       : tutorAvailable
-        ? "Your question and selected StudyPack source will be sent to OpenAI. Tutor conversations are saved in your account; up to 10 messages are allowed every 10 minutes."
-        : "AI Tutor needs OPENAI_API_KEY and OPENAI_MODEL on the server before it can reply.";
+        ? "Your question and selected StudyPack source will be processed by the AI Tutor. Tutor conversations are saved in your account; up to 10 messages are allowed every 10 minutes."
+        : "AI Tutor needs GROQ_API_KEY on the server before it can reply.";
 
   const badgeText =
     mode !== "account"
@@ -258,6 +294,29 @@ export default function TutorPage() {
             <p className="mx-auto mt-2 max-w-lg text-sm text-[var(--text-secondary)]">
               Ask a question, explore a concept, or choose a StudyPack for source-aware tutoring.
             </p>
+            {personalizedStarter && (
+              <div className="mt-5 text-left">
+                <p className="text-xs font-bold text-[var(--fetch-blue-800)] dark:text-[var(--fetch-blue-300)] mb-1.5">
+                  Suggested for your study goal:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(personalizedStarter!.prompt);
+                    input.current?.focus();
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl border-2 border-[var(--fetch-blue-600)] bg-[var(--fetch-blue-50)] dark:bg-[var(--fetch-blue-950)] p-3.5 text-left text-sm font-extrabold text-[var(--fetch-blue-950)] dark:text-[var(--fetch-blue-100)] hover:bg-[var(--fetch-blue-100)] dark:hover:bg-[var(--fetch-blue-900)] transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Sparkle size={20} className="shrink-0 text-[var(--fetch-blue-600)]" />
+                    <span>{personalizedStarter.prompt}</span>
+                  </div>
+                  <span className="shrink-0 text-xs font-bold text-[var(--fetch-blue-700)] dark:text-[var(--fetch-blue-300)] underline ml-2">
+                    Use question
+                  </span>
+                </button>
+              </div>
+            )}
             <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
               {suggestions.map(({ label, prompt, icon: Icon }) => (
                 <button

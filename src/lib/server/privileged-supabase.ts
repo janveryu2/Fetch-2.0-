@@ -58,13 +58,29 @@ export async function persistStudyPackServer(
   }
 
   try {
+    const serializedQuestions = params.questions.map((q) => {
+      const choices = q.choices || (q as unknown as { options?: string[] }).options || [];
+      return {
+        ...q,
+        type: q.type,
+        kind: q.type,
+        choices,
+        options: choices,
+        explanation: q.explanation || "",
+        sourceQuote:
+          (q as unknown as { sourceQuote?: string }).sourceQuote ||
+          q.explanation ||
+          "",
+      };
+    });
+
     const { data, error } = await client.rpc("create_study_pack", {
       p_title: params.title,
       p_source_type: params.sourceType,
       p_source_label: params.sourceLabel,
       p_source_content: params.sourceContent,
       p_content_hash: params.contentHash,
-      p_questions: params.questions,
+      p_questions: serializedQuestions,
       p_owner_id: params.ownerId,
     });
 
@@ -267,6 +283,79 @@ export async function deleteUserAccountServer(
     return {
       success: false,
       error: err instanceof Error ? err : new Error("Failed to delete user account"),
+    };
+  }
+}
+
+export async function reconstructCommittedStudyPack(params: {
+  packId: string;
+  ownerId: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{
+  data: { packId: string; questions: Question[] } | null;
+  error: Error | null;
+}> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return {
+      data: null,
+      error: new Error("No database client available to reconstruct StudyPack."),
+    };
+  }
+
+  try {
+    const { data: packRow, error: packError } = await client
+      .from("study_packs")
+      .select("id")
+      .eq("id", params.packId)
+      .eq("owner_id", params.ownerId)
+      .maybeSingle();
+
+    if (packError || !packRow) {
+      return {
+        data: null,
+        error: packError
+          ? new Error(packError.message)
+          : new Error("StudyPack not found."),
+      };
+    }
+
+    const { data: questionRows, error: questionsError } = await client
+      .from("questions")
+      .select("id, position, kind, prompt, choices")
+      .eq("pack_id", params.packId)
+      .eq("owner_id", params.ownerId)
+      .order("position", { ascending: true });
+
+    if (questionsError) {
+      return { data: null, error: new Error(questionsError.message) };
+    }
+
+    const questions: Question[] = (questionRows || []).map((q) => ({
+      id: q.id,
+      type: q.kind as "multiple_choice" | "fill_blank",
+      prompt: q.prompt,
+      choices: Array.isArray(q.choices) ? q.choices : undefined,
+      answer: "",
+      explanation: "",
+    }));
+
+    return {
+      data: {
+        packId: params.packId,
+        questions,
+      },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      data: null,
+      error:
+        err instanceof Error
+          ? err
+          : new Error("Failed to reconstruct StudyPack"),
     };
   }
 }

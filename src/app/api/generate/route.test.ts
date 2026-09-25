@@ -5,6 +5,14 @@ const mockPersist = vi.fn();
 const mockReserve = vi.fn();
 const mockCommit = vi.fn();
 const mockRelease = vi.fn();
+const mockReconstruct = vi.fn().mockResolvedValue({
+  data: {
+    packId: "pack-111",
+    title: "Valid Title",
+    questions: [{ id: "q1", prompt: "Cached Q" }],
+  },
+  error: null,
+});
 
 vi.mock("@/lib/supabase/authorization", () => ({
   getAuthenticatedRequestContext: () => mockGetAuth(),
@@ -15,6 +23,7 @@ vi.mock("@/lib/server/privileged-supabase", () => ({
   reserveAiGenerationServer: (args: unknown) => mockReserve(args),
   commitAiGenerationServer: (args: unknown) => mockCommit(args),
   releaseAiGenerationServer: (args: unknown) => mockRelease(args),
+  reconstructCommittedStudyPack: (args: unknown) => mockReconstruct(args),
 }));
 
 import { fixtureQuestions, requestSchema, POST } from "./route";

@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { GeminiStudyPackProvider } from "@/lib/ai/gemini-study-pack";
+import {
+  GeminiStudyPackProvider,
+  GeminiStudyPackError,
+  sanitizeErrorMessage,
+} from "@/lib/ai/gemini-study-pack";
 import { generateStudyPack } from "@/lib/ai/study-pack";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
 import {
@@ -8,6 +12,7 @@ import {
   reserveAiGenerationServer,
   commitAiGenerationServer,
   releaseAiGenerationServer,
+  reconstructCommittedStudyPack,
 } from "@/lib/server/privileged-supabase";
 import { createApiErrorResponse } from "@/lib/api-errors";
 import { fixtureQuestions } from "@/app/api/generate/route";
@@ -112,16 +117,29 @@ export async function POST(request: Request) {
   }
 
   if (reservation.data.status === "committed") {
-    const { data: existingPack } = await account.supabase
-      .from("study_packs")
-      .select("id, questions")
-      .eq("id", reservation.data.packId)
-      .maybeSingle();
+    const reconstructed = await reconstructCommittedStudyPack({
+      packId: reservation.data.packId,
+      ownerId: account.userId,
+      fallbackClient: account.supabase,
+    });
+
+    if (reconstructed.error || !reconstructed.data) {
+      console.error("[PDF StudyPack Replay Error]", {
+        requestId,
+        packId: reservation.data.packId,
+        error: reconstructed.error?.message,
+      });
+      return createApiErrorResponse(
+        "STORAGE_UNAVAILABLE",
+        "Unable to retrieve previously generated StudyPack. Please retry.",
+        503
+      );
+    }
 
     return Response.json({
       provider: "gemini",
-      packId: reservation.data.packId,
-      questions: (existingPack?.questions as Question[]) || [],
+      packId: reconstructed.data.packId,
+      questions: reconstructed.data.questions,
     });
   }
 
@@ -139,11 +157,15 @@ export async function POST(request: Request) {
   let provider: "gemini" | "openai" | "development-fixture";
   let warning: string | undefined;
 
+  const boundedSource = doc.extractedText.slice(0, 20_000);
+
   const generationInput = {
     title: parsed.data.title,
-    source: doc.extractedText,
+    source: boundedSource,
     count: parsed.data.count,
   };
+
+  const startTime = Date.now();
 
   if (process.env.GEMINI_API_KEY) {
     try {
@@ -151,18 +173,40 @@ export async function POST(request: Request) {
       questions = await generator.generate(generationInput);
       provider = "gemini";
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error("Gemini PDF study-pack generation failed", error);
+      const elapsedMs = Date.now() - startTime;
+      const failureClass =
+        error instanceof GeminiStudyPackError
+          ? error.classification
+          : "UNKNOWN_ERROR";
+      const httpStatus =
+        error instanceof GeminiStudyPackError ? error.httpStatus : undefined;
+      const validationStage =
+        error instanceof GeminiStudyPackError ? error.validationStage : undefined;
+
+      console.error("[Gemini PDF study-pack generation failed]", {
+        requestId,
+        provider: "gemini",
+        model: process.env.GEMINI_STUDYPACK_MODEL || "gemini-3.7-flash",
+        errorClassification: failureClass,
+        httpStatus,
+        elapsedMs,
+        validationStage,
+        message: sanitizeErrorMessage(
+          error instanceof Error ? error.message : String(error)
+        ),
+      });
+
       await releaseAiGenerationServer({
         ownerId: account.userId,
         requestId,
         fencingToken,
-        failureClass: "gemini_generation_failed",
+        failureClass: failureClass.toLowerCase(),
         fallbackClient: account.supabase,
       });
+
       return createApiErrorResponse(
         "GENERATION_FAILED",
-        `Generation failed safely (${errorMsg.slice(0, 80)}). Your quota was not charged; please retry.`,
+        "Generation failed safely. Your quota was not charged; please retry.",
         502
       );
     }

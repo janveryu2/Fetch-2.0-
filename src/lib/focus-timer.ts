@@ -7,14 +7,19 @@ export type FocusTimer = {
   completed: boolean;
   packId: string;
 };
-export const initialTimer: FocusTimer = {
-  mode: "Focus",
-  durations: { Focus: 25, "Short break": 5, "Long break": 15 },
-  remaining: 1500,
-  endAt: null,
-  completed: false,
-  packId: "",
-};
+export function createInitialTimer(focusMinutes = 25): FocusTimer {
+  const mins = Number.isFinite(focusMinutes) && focusMinutes >= 1 && focusMinutes <= 120 ? focusMinutes : 25;
+  return {
+    mode: "Focus",
+    durations: { Focus: mins, "Short break": 5, "Long break": 15 },
+    remaining: mins * 60,
+    endAt: null,
+    completed: false,
+    packId: "",
+  };
+}
+
+export const initialTimer: FocusTimer = createInitialTimer(25);
 export function tickTimer(timer: FocusTimer, now: number): FocusTimer {
   if (timer.endAt === null) return timer;
   const remaining = Math.max(0, Math.ceil((timer.endAt - now) / 1000));

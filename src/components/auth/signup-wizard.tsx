@@ -22,9 +22,6 @@ export function SignupWizard({ authConfigured }: { authConfigured: boolean }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [goal, setGoal] = useState("A short session every day");
-  const [showOptionalPreferences, setShowOptionalPreferences] = useState(false);
   const [loading, setLoading] = useState(false);
   const [complete, setComplete] = useState(false);
   const [error, setError] = useState("");
@@ -50,12 +47,10 @@ export function SignupWizard({ authConfigured }: { authConfigured: boolean }) {
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/app/home`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/app/start`,
           data: {
             display_name: name.trim(),
             username: username.toLowerCase(),
-            study_subject: subject.trim(),
-            study_goal: goal,
           },
         },
       });
@@ -73,7 +68,7 @@ export function SignupWizard({ authConfigured }: { authConfigured: boolean }) {
           setStep(1);
           return;
         }
-        router.replace("/app/home");
+        router.replace("/app/start");
         router.refresh();
       } else {
         setComplete(true);
@@ -221,42 +216,6 @@ export function SignupWizard({ authConfigured }: { authConfigured: boolean }) {
                       {email} · @{username}
                     </p>
                   </div>
-                </div>
-
-                <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowOptionalPreferences(!showOptionalPreferences)}
-                    className="flex items-center justify-between text-xs font-bold text-[var(--fetch-blue-700)] underline"
-                  >
-                    {showOptionalPreferences ? "Hide study preferences" : "Add study preferences (optional)"}
-                  </button>
-
-                  {showOptionalPreferences && (
-                    <div className="mt-3 space-y-3 pt-1">
-                      <label className="block text-xs font-bold">
-                        Subject or course
-                        <input
-                          value={subject}
-                          onChange={(e) => setSubject(e.target.value)}
-                          placeholder="Biology, history, code..."
-                          className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-card)] px-3 text-sm"
-                        />
-                      </label>
-                      <label className="block text-xs font-bold">
-                        Study goal
-                        <select
-                          value={goal}
-                          onChange={(e) => setGoal(e.target.value)}
-                          className="mt-1 min-h-10 w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-card)] px-3 text-sm"
-                        >
-                          <option value="A short session every day">A short session every day</option>
-                          <option value="Prepare for an upcoming exam">Prepare for an upcoming exam</option>
-                          <option value="Review difficult material">Review difficult material</option>
-                        </select>
-                      </label>
-                    </div>
-                  )}
                 </div>
               </div>
 

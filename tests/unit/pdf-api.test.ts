@@ -5,6 +5,7 @@ const mockPersist = vi.fn();
 const mockReserve = vi.fn();
 const mockCommit = vi.fn();
 const mockRelease = vi.fn();
+const mockReconstruct = vi.fn();
 
 vi.mock("@/lib/supabase/authorization", () => ({
   getAuthenticatedRequestContext: () => mockGetAuth(),
@@ -15,6 +16,7 @@ vi.mock("@/lib/server/privileged-supabase", () => ({
   reserveAiGenerationServer: (args: unknown) => mockReserve(args),
   commitAiGenerationServer: (args: unknown) => mockCommit(args),
   releaseAiGenerationServer: (args: unknown) => mockRelease(args),
+  reconstructCommittedStudyPack: (args: unknown) => mockReconstruct(args),
 }));
 
 import { POST as handleUpload } from "@/app/api/pdf/upload/route";
@@ -27,6 +29,7 @@ describe("PDF Upload & Generation API Routes", () => {
     mockReserve.mockReset();
     mockCommit.mockReset();
     mockRelease.mockReset();
+    mockReconstruct.mockReset();
   });
 
   describe("POST /api/pdf/upload", () => {

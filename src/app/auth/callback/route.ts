@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_DESTINATIONS = [
   "/app",
+  "/app/start",
   "/app/home",
   "/app/settings",
   "/app/reset-password",
