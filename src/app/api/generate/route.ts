@@ -2,6 +2,8 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { generateStudyPack } from "@/lib/ai/study-pack";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
+import { persistStudyPackServer } from "@/lib/server/privileged-supabase";
+import { createApiErrorResponse } from "@/lib/api-errors";
 import type { Question } from "@/lib/demo-types";
 
 export const requestSchema = z.object({
@@ -32,45 +34,81 @@ export function fixtureQuestions(source: string, count: number): Question[] {
 
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: "Add a title and at least 80 characters of study material." }, { status: 400 });
+  if (!parsed.success) {
+    return createApiErrorResponse(
+      "INVALID_REQUEST",
+      "Add a title and at least 80 characters of study material.",
+      400
+    );
+  }
 
   const account = await getAuthenticatedRequestContext();
+
+  // Unauthenticated requests are browser-demo requests.
+  // They strictly return deterministic local fixtures with a clear warning,
+  // preventing any unauthenticated AI spend or database persistence.
+  if (!account) {
+    const questions = fixtureQuestions(parsed.data.source, parsed.data.count);
+    return Response.json({
+      provider: "development-fixture",
+      warning: "These questions are deterministic development fixtures, not AI-generated production content.",
+      questions,
+    });
+  }
+
   let questions: Question[];
   let provider: "openai" | "development-fixture";
   let warning: string | undefined;
+
   if (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL) {
     try {
       questions = await generateStudyPack(parsed.data);
       provider = "openai";
     } catch (error) {
       console.error("Study-pack generation failed", error);
-      return Response.json({ error: "Generation failed safely. Your material was not saved; please retry." }, { status: 502 });
+      return createApiErrorResponse(
+        "GENERATION_FAILED",
+        "Generation failed safely. Your material was not saved; please retry.",
+        502
+      );
     }
   } else if (process.env.NODE_ENV === "production" && process.env.FETCH_ENABLE_DEV_FIXTURE !== "true") {
-    return Response.json({ error: "AI generation is not configured. Add both OPENAI_API_KEY and OPENAI_MODEL." }, { status: 503 });
+    return createApiErrorResponse(
+      "PROVIDER_UNAVAILABLE",
+      "AI generation is not configured. Add both OPENAI_API_KEY and OPENAI_MODEL.",
+      503
+    );
   } else {
     questions = fixtureQuestions(parsed.data.source, parsed.data.count);
     provider = "development-fixture";
     warning = "These questions are deterministic development fixtures, not AI-generated production content.";
   }
 
-  if (!account) return Response.json({ provider, warning, questions });
-
-  const { data, error } = await account.supabase.rpc("create_study_pack", {
-    p_title: parsed.data.title,
-    p_source_type: "text",
-    p_source_label: provider === "openai" ? "Pasted text · AI generated" : "Pasted text · development fixture",
-    p_source_content: parsed.data.source,
-    p_content_hash: createHash("sha256").update(parsed.data.source).digest("hex"),
-    p_questions: questions,
+  const contentHash = createHash("sha256").update(parsed.data.source).digest("hex");
+  const { data: saved, error: persistError } = await persistStudyPackServer({
+    ownerId: account.userId,
+    title: parsed.data.title,
+    sourceType: "text",
+    sourceLabel: provider === "openai" ? "Pasted text · AI generated" : "Pasted text · development fixture",
+    sourceContent: parsed.data.source,
+    contentHash,
+    questions,
+    fallbackClient: account.supabase,
   });
-  if (error || !data || typeof data !== "object") {
-    console.error("StudyPack persistence failed", error?.code);
-    return Response.json({ error: "FETCH generated the questions but could not save this StudyPack. Apply the account database schema and retry." }, { status: 503 });
+
+  if (persistError || !saved) {
+    console.error("StudyPack persistence failed", persistError?.message);
+    return createApiErrorResponse(
+      "STORAGE_UNAVAILABLE",
+      "FETCH generated the questions but could not save this StudyPack. Apply the account database schema and retry.",
+      503
+    );
   }
-  const saved = data as { id?: unknown; questions?: unknown };
-  if (typeof saved.id !== "string" || !Array.isArray(saved.questions)) {
-    return Response.json({ error: "FETCH could not confirm that this StudyPack was saved." }, { status: 503 });
-  }
-  return Response.json({ provider, warning, packId: saved.id, questions: saved.questions });
+
+  return Response.json({
+    provider,
+    warning,
+    packId: saved.id,
+    questions: saved.questions,
+  });
 }

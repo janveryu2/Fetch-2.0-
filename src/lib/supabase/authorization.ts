@@ -26,6 +26,6 @@ export async function getAuthenticatedRequestContext(): Promise<AuthenticatedReq
   };
 }
 
-export function unauthorizedResponse() {
-  return Response.json({ error: "Sign in to use account storage." }, { status: 401 });
+export function unauthorizedResponse(message = "Sign in to use account storage.") {
+  return Response.json({ error: message, code: "AUTH_REQUIRED" }, { status: 401 });
 }

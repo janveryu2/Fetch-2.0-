@@ -21,12 +21,17 @@ export default function HomePage() {
     packTitle: string;
     progress: number;
   } | null>(null);
+  const [showUsernamePrompt, setShowUsernamePrompt] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       try {
         const found = findActiveDraft(mode === "account" ? "account" : "demo");
         if (found) setActiveDraft(found);
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("auth") === "setup-username" || params.get("auth") === "username-taken") {
+          setShowUsernamePrompt(true);
+        }
       } catch {
         // Ignore draft read errors
       }
@@ -53,6 +58,24 @@ export default function HomePage() {
           className="pixel-art hidden sm:block"
         />
       </div>
+
+      {showUsernamePrompt && (
+        <div
+          role="status"
+          className="my-4 flex items-center justify-between gap-4 rounded-xl border border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-4 text-sm"
+        >
+          <div>
+            <strong className="text-[var(--fetch-blue-900)]">Complete your profile:</strong>{" "}
+            <span className="text-[var(--fetch-blue-800)]">Choose your unique @username to finish setting up your account.</span>
+          </div>
+          <Link
+            href="/app/settings?auth=setup-username"
+            className="shrink-0 font-extrabold text-[var(--fetch-blue-700)] underline"
+          >
+            Set username &rarr;
+          </Link>
+        </div>
+      )}
 
       <section className="my-6 flex flex-wrap items-center justify-between gap-5 rounded-2xl bg-[var(--fetch-blue-100)] p-5">
         <div>

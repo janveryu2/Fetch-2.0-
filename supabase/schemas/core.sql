@@ -16,6 +16,7 @@ create table if not exists public.study_packs (
   source_type text not null check (source_type in ('text','pdf','url')),
   source_label text not null,
   status text not null default 'ready' check (status in ('processing','ready','failed')),
+  archived_at timestamptz default null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -76,6 +77,7 @@ create table if not exists public.study_sessions (
   user_id uuid not null references auth.users(id) on delete cascade,
   pack_id uuid not null references public.study_packs(id) on delete cascade,
   client_attempt_id uuid,
+  request_hash text default null,
   score integer not null check (score between 0 and 100),
   correct_count integer not null check (correct_count >= 0),
   question_count integer not null check (question_count > 0),
@@ -142,6 +144,66 @@ create table if not exists public.live_rooms (
   created_at timestamptz not null default now()
 );
 
+-- Phase 1 Foundation Tables
+create table if not exists private.generation_requests (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  request_id uuid not null,
+  payload_hash text not null,
+  utc_month_key text not null check (utc_month_key ~ '^\d{4}-\d{2}$'),
+  state text not null check (state in ('reserved', 'processing', 'committed', 'released', 'expired')),
+  fencing_token bigint not null default 1,
+  pack_id uuid references public.study_packs(id) on delete set null,
+  failure_class text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (owner_id, request_id)
+);
+
+create table if not exists private.monthly_ai_usage (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  month_key text not null check (month_key ~ '^\d{4}-\d{2}$'),
+  reserved_count integer not null default 0 check (reserved_count >= 0),
+  committed_count integer not null default 0 check (committed_count >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, month_key)
+);
+
+create table if not exists public.study_session_answers (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  session_id uuid not null references public.study_sessions(id) on delete cascade,
+  question_id uuid not null references public.questions(id) on delete cascade,
+  submitted_answer text not null,
+  is_correct boolean not null,
+  answered_at timestamptz not null default now(),
+  ordinal integer not null,
+  unique (session_id, question_id)
+);
+
+create table if not exists public.study_session_drafts (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  pack_id uuid not null references public.study_packs(id) on delete cascade,
+  answers jsonb not null default '[]'::jsonb,
+  current_position integer not null default 0,
+  revision integer not null default 1,
+  updated_at timestamptz not null default now(),
+  unique (user_id, pack_id)
+);
+
+create table if not exists private.source_documents (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  storage_path text not null,
+  file_size_bytes bigint not null,
+  content_hash text not null,
+  extraction_status text not null default 'pending' check (extraction_status in ('pending', 'extracted', 'failed')),
+  linked_pack_id uuid references public.study_packs(id) on delete set null,
+  cleanup_state text not null default 'retained' check (cleanup_state in ('retained', 'cleaned', 'failed')),
+  created_at timestamptz not null default now()
+);
+
 create index if not exists study_packs_owner_idx on public.study_packs(owner_id);
 create index if not exists questions_owner_idx on public.questions(owner_id);
 create index if not exists questions_pack_idx on public.questions(pack_id);
@@ -154,6 +216,13 @@ create index if not exists requests_sender_idx on public.friend_requests(sender_
 create index if not exists requests_recipient_idx on public.friend_requests(recipient_id);
 create index if not exists members_user_idx on public.conversation_members(user_id);
 create index if not exists messages_conversation_idx on public.messages(conversation_id);
+create index if not exists generation_requests_owner_month_idx on private.generation_requests(owner_id, utc_month_key);
+create index if not exists study_session_answers_session_idx on public.study_session_answers(session_id);
+create index if not exists study_session_answers_session_ordinal_idx on public.study_session_answers(session_id, ordinal);
+create index if not exists study_packs_owner_archived_idx on public.study_packs(owner_id, archived_at);
+create index if not exists study_sessions_user_completed_idx on public.study_sessions(user_id, completed_at desc);
+create index if not exists study_session_drafts_user_pack_idx on public.study_session_drafts(user_id, pack_id);
+create index if not exists source_documents_owner_idx on private.source_documents(owner_id);
 
 alter table public.profiles enable row level security;
 alter table public.study_packs enable row level security;
@@ -165,11 +234,16 @@ alter table public.conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.live_rooms enable row level security;
+alter table public.study_session_answers enable row level security;
+alter table public.study_session_drafts enable row level security;
 alter table private.study_sources enable row level security;
 alter table private.question_keys enable row level security;
 alter table private.tutor_conversations enable row level security;
 alter table private.tutor_messages enable row level security;
 alter table private.tutor_rate_limits enable row level security;
+alter table private.generation_requests enable row level security;
+alter table private.monthly_ai_usage enable row level security;
+alter table private.source_documents enable row level security;
 
 revoke all on all tables in schema public from anon, authenticated;
 grant select, insert, update on public.profiles to authenticated;
@@ -177,17 +251,31 @@ grant select on public.study_packs to authenticated;
 grant select, insert, update, delete on public.calendar_events, public.friend_requests to authenticated;
 grant select on public.questions to authenticated;
 grant select on public.study_sessions to authenticated;
-grant select, insert on public.conversations, public.conversation_members, public.messages, public.live_rooms to authenticated;
+grant select on public.study_session_answers to authenticated;
+grant select, insert, update, delete on public.study_session_drafts to authenticated;
+grant select on public.conversations, public.conversation_members, public.messages, public.live_rooms to authenticated;
 revoke all on private.study_sources, private.question_keys, private.tutor_conversations, private.tutor_messages from anon, authenticated;
-revoke all on private.tutor_rate_limits from anon, authenticated;
+revoke all on private.tutor_rate_limits, private.generation_requests, private.monthly_ai_usage, private.source_documents from anon, authenticated;
 
-create policy "profiles_read_authenticated" on public.profiles for select to authenticated using (true);
+create policy "profiles_read_self" on public.profiles for select to authenticated using ((select auth.uid()) = id);
 create policy "profiles_insert_self" on public.profiles for insert to authenticated with check ((select auth.uid()) = id);
 create policy "profiles_update_self" on public.profiles for update to authenticated using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
 
 create policy "packs_read_owner" on public.study_packs for select to authenticated using ((select auth.uid()) = owner_id);
 create policy "questions_read_owner" on public.questions for select to authenticated using ((select auth.uid()) = owner_id);
 create policy "sessions_read_self" on public.study_sessions for select to authenticated using ((select auth.uid()) = user_id);
+
+create policy "answers_read_session_owner" on public.study_session_answers
+  for select to authenticated
+  using (exists (
+    select 1 from public.study_sessions as session
+    where session.id = session_id and session.user_id = (select auth.uid())
+  ));
+
+create policy "drafts_owner_all" on public.study_session_drafts
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 create policy "events_read_self" on public.calendar_events for select to authenticated using ((select auth.uid()) = user_id);
 create policy "events_insert_self" on public.calendar_events for insert to authenticated
@@ -214,12 +302,10 @@ grant usage on schema private to authenticated;
 grant execute on function private.user_conversation_ids() to authenticated;
 
 create policy "conversations_read_members" on public.conversations for select to authenticated using (id in (select private.user_conversation_ids()));
-create policy "conversations_create" on public.conversations for insert to authenticated with check (true);
 create policy "members_read_members" on public.conversation_members for select to authenticated using (conversation_id in (select private.user_conversation_ids()));
-create policy "members_join_self" on public.conversation_members for insert to authenticated with check ((select auth.uid()) = user_id);
 create policy "messages_read_members" on public.messages for select to authenticated using (conversation_id in (select private.user_conversation_ids()));
 create policy "messages_send_as_self" on public.messages for insert to authenticated with check ((select auth.uid()) = sender_id and conversation_id in (select private.user_conversation_ids()));
-create policy "rooms_read_authenticated" on public.live_rooms for select to authenticated using (true);
+create policy "rooms_read_host" on public.live_rooms for select to authenticated using ((select auth.uid()) = host_id);
 create policy "rooms_create_host" on public.live_rooms for insert to authenticated with check ((select auth.uid()) = host_id);
 
 -- Answer keys and source material remain in the private schema and are accessed only
@@ -232,14 +318,17 @@ create function private.persist_study_pack(
   p_source_label text,
   p_source_content text,
   p_content_hash text,
-  p_questions jsonb
+  p_questions jsonb,
+  p_owner_id uuid default null
 ) returns jsonb
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  v_owner uuid := (select auth.uid());
+  v_caller_role text := coalesce(current_setting('request.jwt.claim.role', true), pg_catalog.current_user);
+  v_auth_uid uuid := (select auth.uid());
+  v_owner uuid;
   v_pack_id uuid := pg_catalog.gen_random_uuid();
   v_question_id uuid;
   v_item jsonb;
@@ -252,9 +341,23 @@ declare
   v_choices jsonb;
   v_safe_questions jsonb := '[]'::jsonb;
 begin
+  if p_owner_id is not null then
+    if v_caller_role is distinct from 'service_role' and current_user not in ('postgres', 'supabase_admin') then
+      raise exception 'Only server operations may specify owner' using errcode = '42501';
+    end if;
+    v_owner := p_owner_id;
+  else
+    v_owner := v_auth_uid;
+  end if;
+
   if v_owner is null then
     raise exception 'Sign in required' using errcode = '42501';
   end if;
+
+  if not exists (select 1 from auth.users where id = v_owner) then
+    raise exception 'Owner not found' using errcode = '42501';
+  end if;
+
   if p_title is null
     or p_source_type is null
     or p_source_label is null
@@ -344,13 +447,14 @@ create function public.create_study_pack(
   p_source_label text,
   p_source_content text,
   p_content_hash text,
-  p_questions jsonb
+  p_questions jsonb,
+  p_owner_id uuid default null
 ) returns jsonb
 language sql
-security invoker
+security definer
 set search_path = ''
 as $$
-  select private.persist_study_pack(p_title, p_source_type, p_source_label, p_source_content, p_content_hash, p_questions);
+  select private.persist_study_pack(p_title, p_source_type, p_source_label, p_source_content, p_content_hash, p_questions, p_owner_id);
 $$;
 
 create function private.grade_study_answer(p_pack_id uuid, p_question_id uuid, p_answer text)
@@ -399,7 +503,8 @@ as $$ select private.grade_study_answer(p_pack_id, p_question_id, p_answer); $$;
 create function private.complete_study_attempt(
   p_pack_id uuid,
   p_answers jsonb,
-  p_client_attempt_id uuid default null
+  p_client_attempt_id uuid default null,
+  p_request_hash text default null
 )
 returns jsonb
 language plpgsql
@@ -413,39 +518,59 @@ declare
   v_attempt_id uuid;
   v_completed_at timestamptz;
   v_existing_score integer;
+  v_existing_pack_id uuid;
+  v_existing_hash text;
 begin
-  if v_owner is null or not exists (
-    select 1 from public.study_packs where id = p_pack_id and owner_id = v_owner and status = 'ready'
-  ) then
-    raise exception 'StudyPack not found' using errcode = '42501';
+  if v_owner is null then
+    raise exception 'Authentication required' using errcode = '42501';
   end if;
 
-  if p_client_attempt_id is not null then
-    select s.id, s.completed_at, s.score, s.correct_count, s.question_count
-    into v_attempt_id, v_completed_at, v_existing_score, v_correct_count, v_question_count
-    from public.study_sessions as s
-    where s.user_id = v_owner and s.client_attempt_id = p_client_attempt_id;
+  if p_client_attempt_id is null then
+    raise exception 'client_attempt_id is required' using errcode = '22023';
+  end if;
 
-    if found then
-      return pg_catalog.jsonb_build_object(
-        'id', v_attempt_id,
-        'packId', p_pack_id,
-        'score', v_existing_score,
-        'correct', v_correct_count,
-        'total', v_question_count,
-        'completedAt', v_completed_at
-      );
+  if not exists (
+    select 1 from public.study_packs
+    where id = p_pack_id
+      and owner_id = v_owner
+      and status = 'ready'
+      and archived_at is null
+  ) then
+    raise exception 'StudyPack not found or archived' using errcode = '42501';
+  end if;
+
+  select s.id, s.pack_id, s.completed_at, s.score, s.correct_count, s.question_count, s.request_hash
+  into v_attempt_id, v_existing_pack_id, v_completed_at, v_existing_score, v_correct_count, v_question_count, v_existing_hash
+  from public.study_sessions as s
+  where s.user_id = v_owner and s.client_attempt_id = p_client_attempt_id;
+
+  if found then
+    if v_existing_pack_id <> p_pack_id or (v_existing_hash is not null and p_request_hash is not null and v_existing_hash <> p_request_hash) then
+      raise exception 'Attempt conflict: client attempt ID reused with different parameters' using errcode = '23505';
     end if;
+
+    return pg_catalog.jsonb_build_object(
+      'id', v_attempt_id,
+      'packId', v_existing_pack_id,
+      'score', v_existing_score,
+      'correct', v_correct_count,
+      'total', v_question_count,
+      'completedAt', v_completed_at
+    );
   end if;
 
   if pg_catalog.jsonb_typeof(p_answers) is distinct from 'array' then
-    raise exception 'Invalid answers' using errcode = '22023';
+    raise exception 'Invalid answers format' using errcode = '22023';
   end if;
+
   select pg_catalog.count(*)::integer into v_question_count
-  from public.questions where pack_id = p_pack_id and owner_id = v_owner;
+  from public.questions
+  where pack_id = p_pack_id and owner_id = v_owner;
+
   if v_question_count = 0 or pg_catalog.jsonb_array_length(p_answers) <> v_question_count then
     raise exception 'Submit one answer per question' using errcode = '22023';
   end if;
+
   if exists (
     select 1
     from pg_catalog.jsonb_to_recordset(p_answers) as submitted(question_id uuid, answer text)
@@ -474,9 +599,70 @@ begin
     on answer_key.question_id = question.id and answer_key.owner_id = v_owner
   where pg_catalog.lower(pg_catalog.btrim(submitted.answer)) = pg_catalog.lower(pg_catalog.btrim(answer_key.answer));
 
-  insert into public.study_sessions (user_id, pack_id, client_attempt_id, score, correct_count, question_count)
-  values (v_owner, p_pack_id, p_client_attempt_id, pg_catalog.round((v_correct_count::numeric / v_question_count) * 100)::integer, v_correct_count, v_question_count)
-  returning id, completed_at into v_attempt_id, v_completed_at;
+  begin
+    insert into public.study_sessions (
+      user_id,
+      pack_id,
+      client_attempt_id,
+      request_hash,
+      score,
+      correct_count,
+      question_count
+    )
+    values (
+      v_owner,
+      p_pack_id,
+      p_client_attempt_id,
+      p_request_hash,
+      pg_catalog.round((v_correct_count::numeric / v_question_count) * 100)::integer,
+      v_correct_count,
+      v_question_count
+    )
+    returning id, completed_at into v_attempt_id, v_completed_at;
+  exception
+    when unique_violation then
+      select s.id, s.pack_id, s.completed_at, s.score, s.correct_count, s.question_count, s.request_hash
+      into v_attempt_id, v_existing_pack_id, v_completed_at, v_existing_score, v_correct_count, v_question_count, v_existing_hash
+      from public.study_sessions as s
+      where s.user_id = v_owner and s.client_attempt_id = p_client_attempt_id;
+
+      if found then
+        if v_existing_pack_id <> p_pack_id or (v_existing_hash is not null and p_request_hash is not null and v_existing_hash <> p_request_hash) then
+          raise exception 'Attempt conflict: client attempt ID reused with different parameters' using errcode = '23505';
+        end if;
+
+        return pg_catalog.jsonb_build_object(
+          'id', v_attempt_id,
+          'packId', v_existing_pack_id,
+          'score', v_existing_score,
+          'correct', v_correct_count,
+          'total', v_question_count,
+          'completedAt', v_completed_at
+        );
+      end if;
+      raise;
+  end;
+
+  insert into public.study_session_answers (
+    session_id,
+    question_id,
+    submitted_answer,
+    is_correct,
+    answered_at,
+    ordinal
+  )
+  select
+    v_attempt_id,
+    (elem.val->>'question_id')::uuid,
+    elem.val->>'answer',
+    (pg_catalog.lower(pg_catalog.btrim(elem.val->>'answer')) = pg_catalog.lower(pg_catalog.btrim(answer_key.answer))),
+    v_completed_at,
+    coalesce(question.position, (elem.ord - 1)::integer)
+  from pg_catalog.jsonb_array_elements(p_answers) with ordinality as elem(val, ord)
+  join public.questions as question
+    on question.id = (elem.val->>'question_id')::uuid and question.pack_id = p_pack_id and question.owner_id = v_owner
+  join private.question_keys as answer_key
+    on answer_key.question_id = question.id and answer_key.owner_id = v_owner;
 
   return pg_catalog.jsonb_build_object(
     'id', v_attempt_id,
@@ -492,13 +678,14 @@ $$;
 create function public.complete_study_attempt(
   p_pack_id uuid,
   p_answers jsonb,
-  p_client_attempt_id uuid default null
+  p_client_attempt_id uuid default null,
+  p_request_hash text default null
 )
 returns jsonb
 language sql
 security invoker
 set search_path = ''
-as $$ select private.complete_study_attempt(p_pack_id, p_answers, p_client_attempt_id); $$;
+as $$ select private.complete_study_attempt(p_pack_id, p_answers, p_client_attempt_id, p_request_hash); $$;
 
 create function private.get_owned_study_source(p_pack_id uuid)
 returns text
@@ -711,36 +898,214 @@ security invoker
 set search_path = ''
 as $$ select private.save_tutor_exchange(p_conversation_id, p_pack_id, p_user_content, p_assistant_content); $$;
 
-revoke all on function private.persist_study_pack(text, text, text, text, text, jsonb) from public, anon, authenticated;
+revoke all on function private.persist_study_pack(text, text, text, text, text, jsonb, uuid) from public, anon, authenticated;
 revoke all on function private.grade_study_answer(uuid, uuid, text) from public, anon, authenticated;
-revoke all on function private.complete_study_attempt(uuid, jsonb) from public, anon, authenticated;
+revoke all on function private.complete_study_attempt(uuid, jsonb, uuid, text) from public, anon, authenticated;
 revoke all on function private.get_owned_study_source(uuid) from public, anon, authenticated;
 revoke all on function private.consume_tutor_quota() from public, anon, authenticated;
 revoke all on function private.read_tutor_conversation(uuid) from public, anon, authenticated;
 revoke all on function private.list_tutor_conversations() from public, anon, authenticated;
 revoke all on function private.save_tutor_exchange(uuid, uuid, text, text) from public, anon, authenticated;
-grant execute on function private.persist_study_pack(text, text, text, text, text, jsonb) to authenticated;
+grant execute on function private.persist_study_pack(text, text, text, text, text, jsonb, uuid) to postgres, service_role;
 grant execute on function private.grade_study_answer(uuid, uuid, text) to authenticated;
-grant execute on function private.complete_study_attempt(uuid, jsonb) to authenticated;
+grant execute on function private.complete_study_attempt(uuid, jsonb, uuid, text) to authenticated;
 grant execute on function private.get_owned_study_source(uuid) to authenticated;
 grant execute on function private.consume_tutor_quota() to authenticated;
 grant execute on function private.read_tutor_conversation(uuid) to authenticated;
 grant execute on function private.list_tutor_conversations() to authenticated;
 grant execute on function private.save_tutor_exchange(uuid, uuid, text, text) to authenticated;
 
-revoke all on function public.create_study_pack(text, text, text, text, text, jsonb) from public, anon;
+revoke all on function public.create_study_pack(text, text, text, text, text, jsonb, uuid) from public, anon, authenticated;
 revoke all on function public.grade_study_answer(uuid, uuid, text) from public, anon;
-revoke all on function public.complete_study_attempt(uuid, jsonb) from public, anon;
+revoke all on function public.complete_study_attempt(uuid, jsonb, uuid, text) from public, anon;
 revoke all on function public.get_owned_study_source(uuid) from public, anon;
 revoke all on function public.consume_tutor_quota() from public, anon;
 revoke all on function public.read_tutor_conversation(uuid) from public, anon;
 revoke all on function public.list_tutor_conversations() from public, anon;
 revoke all on function public.save_tutor_exchange(uuid, uuid, text, text) from public, anon;
-grant execute on function public.create_study_pack(text, text, text, text, text, jsonb) to authenticated;
+grant execute on function public.create_study_pack(text, text, text, text, text, jsonb, uuid) to postgres, service_role;
 grant execute on function public.grade_study_answer(uuid, uuid, text) to authenticated;
-grant execute on function public.complete_study_attempt(uuid, jsonb) to authenticated;
+grant execute on function public.complete_study_attempt(uuid, jsonb, uuid, text) to authenticated;
 grant execute on function public.get_owned_study_source(uuid) to authenticated;
 grant execute on function public.consume_tutor_quota() to authenticated;
 grant execute on function public.read_tutor_conversation(uuid) to authenticated;
 grant execute on function public.list_tutor_conversations() to authenticated;
 grant execute on function public.save_tutor_exchange(uuid, uuid, text, text) to authenticated;
+
+-- Phase 2: Production Auth and Profiles
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_display_name text;
+  v_raw_username text;
+  v_username text;
+  v_avatar_url text;
+begin
+  v_display_name := pg_catalog.substr(
+    pg_catalog.btrim(
+      coalesce(
+        nullif(pg_catalog.btrim(new.raw_user_meta_data->>'display_name'), ''),
+        nullif(pg_catalog.btrim(new.raw_user_meta_data->>'full_name'), ''),
+        nullif(pg_catalog.btrim(new.raw_user_meta_data->>'name'), ''),
+        nullif(pg_catalog.split_part(new.email, '@', 1), ''),
+        'FETCH Student'::text
+      )
+    ), 1, 60
+  );
+  if pg_catalog.char_length(v_display_name) = 0 then
+    v_display_name := 'FETCH Student';
+  end if;
+
+  v_raw_username := pg_catalog.lower(pg_catalog.btrim(coalesce(new.raw_user_meta_data->>'username', '')));
+  if v_raw_username ~ '^[a-z0-9_]{3,24}$' then
+    if not exists (select 1 from public.profiles where username = v_raw_username) then
+      v_username := v_raw_username;
+    else
+      v_username := null;
+    end if;
+  else
+    v_username := null;
+  end if;
+
+  v_avatar_url := coalesce(
+    new.raw_user_meta_data->>'avatar_url',
+    new.raw_user_meta_data->>'picture'
+  );
+
+  insert into public.profiles (id, display_name, username, avatar_url)
+  values (new.id, v_display_name, v_username, v_avatar_url)
+  on conflict (id) do nothing;
+
+  return new;
+exception
+  when others then
+    insert into public.profiles (id, display_name, username)
+    values (new.id, 'FETCH Student', null)
+    on conflict (id) do nothing;
+    return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+create or replace function private.ensure_profile(p_user_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user record;
+  v_profile record;
+  v_display_name text;
+  v_raw_username text;
+  v_username text;
+  v_avatar_url text;
+begin
+  select * into v_profile from public.profiles where id = p_user_id;
+  if found then
+    return pg_catalog.to_jsonb(v_profile);
+  end if;
+
+  select * into v_user from auth.users where id = p_user_id;
+  if not found then
+    return null;
+  end if;
+
+  v_display_name := pg_catalog.substr(
+    pg_catalog.btrim(
+      coalesce(
+        nullif(pg_catalog.btrim(v_user.raw_user_meta_data->>'display_name'), ''),
+        nullif(pg_catalog.btrim(v_user.raw_user_meta_data->>'full_name'), ''),
+        nullif(pg_catalog.btrim(v_user.raw_user_meta_data->>'name'), ''),
+        nullif(pg_catalog.split_part(v_user.email, '@', 1), ''),
+        'FETCH Student'::text
+      )
+    ), 1, 60
+  );
+  if pg_catalog.char_length(v_display_name) = 0 then
+    v_display_name := 'FETCH Student';
+  end if;
+
+  v_raw_username := pg_catalog.lower(pg_catalog.btrim(coalesce(v_user.raw_user_meta_data->>'username', '')));
+  if v_raw_username ~ '^[a-z0-9_]{3,24}$' then
+    if not exists (select 1 from public.profiles where username = v_raw_username) then
+      v_username := v_raw_username;
+    else
+      v_username := null;
+    end if;
+  else
+    v_username := null;
+  end if;
+
+  v_avatar_url := coalesce(
+    v_user.raw_user_meta_data->>'avatar_url',
+    v_user.raw_user_meta_data->>'picture'
+  );
+
+  begin
+    insert into public.profiles (id, display_name, username, avatar_url)
+    values (p_user_id, v_display_name, v_username, v_avatar_url)
+    on conflict (id) do update set
+      updated_at = pg_catalog.now()
+    returning * into v_profile;
+  exception
+    when unique_violation then
+      -- Fallback if username was concurrently claimed
+      insert into public.profiles (id, display_name, username, avatar_url)
+      values (p_user_id, v_display_name, null, v_avatar_url)
+      on conflict (id) do update set
+        updated_at = pg_catalog.now()
+      returning * into v_profile;
+  end;
+
+  return pg_catalog.to_jsonb(v_profile);
+end;
+$$;
+
+create or replace function public.ensure_profile()
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := (select auth.uid());
+begin
+  if v_user_id is null then
+    raise exception 'Not authenticated' using errcode = '42501';
+  end if;
+  return private.ensure_profile(v_user_id);
+end;
+$$;
+
+create or replace function public.check_username_available(
+  p_username text,
+  p_current_user_id uuid default null
+)
+returns boolean
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+  select not exists (
+    select 1 from public.profiles
+    where username = pg_catalog.lower(pg_catalog.btrim(p_username))
+      and (p_current_user_id is null or id <> p_current_user_id)
+  );
+$$;
+
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function private.ensure_profile(uuid) from public, anon, authenticated;
+grant execute on function public.ensure_profile() to authenticated;
+revoke all on function public.check_username_available(text, uuid) from public, anon;
+grant execute on function public.check_username_available(text, uuid) to authenticated, anon;
+

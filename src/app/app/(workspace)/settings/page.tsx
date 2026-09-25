@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -35,15 +36,27 @@ export default function SettingsPage() {
           // Local storage restricted
         }
       } else {
-        // In account mode, load name if available in local storage or profile
+        // In account mode, check setup params and fetch real profile from API
         try {
-          const cachedName = localStorage.getItem("fetch-account-name");
-          if (cachedName) setName(cachedName);
-          const cachedUser = localStorage.getItem("fetch-account-username");
-          if (cachedUser) setUsername(cachedUser);
+          const params = new URLSearchParams(window.location.search);
+          if (params.get("auth") === "setup-username") {
+            setNotice("Welcome to FETCH! Please set a unique @username for your account.");
+          } else if (params.get("auth") === "username-taken") {
+            setNotice("Your previous requested username was already claimed. Please choose a new unique @username.");
+          }
         } catch {
-          // Local storage restricted
+          // Ignore location parse errors
         }
+
+        fetch("/api/account/profile")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.profile) {
+              setName(data.profile.displayName || "FETCH Student");
+              setUsername(data.profile.username || "");
+            }
+          })
+          .catch(() => {});
       }
     });
 
@@ -73,6 +86,7 @@ export default function SettingsPage() {
 
   async function handleSaveProfile() {
     setNotice("");
+    setErrorMessage("");
     if (mode === "demo") {
       try {
         localStorage.setItem("fetch-profile-name", name.trim() || "FETCH Student");
@@ -84,14 +98,40 @@ export default function SettingsPage() {
       return;
     }
 
-    // Account mode profile save
+    // Account mode profile save via PATCH /api/account/profile
     setSaving(true);
     try {
-      localStorage.setItem("fetch-account-name", name.trim());
+      const payload: { displayName?: string; username?: string } = {
+        displayName: name.trim() || "FETCH Student",
+      };
+      if (username.trim()) {
+        payload.username = username.toLowerCase().trim();
+      }
+      const res = await fetch("/api/account/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const resJson = await res.json();
+      if (!res.ok) {
+        if (resJson.code === "USERNAME_TAKEN") {
+          setErrorMessage("That username is already taken. Please choose another.");
+        } else if (resJson.code === "INVALID_USERNAME_FORMAT") {
+          setErrorMessage("Username must be 3-24 characters using lowercase letters, numbers, or underscores.");
+        } else {
+          setErrorMessage(resJson.error || "Could not update profile.");
+        }
+        return;
+      }
+
+      if (resJson.profile) {
+        setName(resJson.profile.displayName);
+        setUsername(resJson.profile.username || "");
+      }
       setSaved(true);
-      setNotice("Account profile preference updated.");
+      setNotice("Account profile updated successfully.");
     } catch {
-      setNotice("Could not update profile preferences.");
+      setErrorMessage("Could not update profile preferences.");
     } finally {
       setSaving(false);
     }
@@ -196,18 +236,38 @@ export default function SettingsPage() {
               </label>
               <label className="block font-extrabold">
                 Username
-                <input
-                  value={username}
-                  readOnly
-                  aria-describedby="username-hint"
-                  className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-subtle)] px-4"
-                />
+                <span className="relative mt-2 flex">
+                  <span className="absolute left-4 top-3 font-extrabold text-[var(--fetch-blue-700)]">@</span>
+                  <input
+                    value={username}
+                    readOnly={mode === "demo"}
+                    placeholder={mode === "account" ? "choose_username" : "fetch_student"}
+                    onChange={(event) => {
+                      if (mode === "account") {
+                        setUsername(
+                          event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24)
+                        );
+                        setSaved(false);
+                        setErrorMessage("");
+                      }
+                    }}
+                    aria-describedby="username-hint"
+                    className={`min-h-12 w-full rounded-xl border border-[var(--border-strong)] ${
+                      mode === "demo" ? "bg-[var(--surface-subtle)]" : "bg-[var(--surface-card)]"
+                    } pl-9 pr-4`}
+                  />
+                </span>
                 <span id="username-hint" className="mt-1 block text-xs text-[var(--text-secondary)]">
                   {mode === "account"
-                    ? "Your username is linked to your FETCH account."
+                    ? "3-24 characters (lowercase letters, numbers, underscores). Unique across FETCH."
                     : "Development fixture identity · Saved only in this browser."}
                 </span>
               </label>
+              {errorMessage && (
+                <p role="alert" className="text-sm font-bold text-[var(--danger)]">
+                  {errorMessage}
+                </p>
+              )}
               <div className="flex items-center gap-3">
                 <Button
                   onClick={() => void handleSaveProfile()}
