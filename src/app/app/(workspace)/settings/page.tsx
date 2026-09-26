@@ -516,7 +516,7 @@ export default function SettingsPage() {
                 <div>
                   <div className="font-bold text-[var(--text-primary)]">Study Reminders</div>
                   <div className="text-sm text-[var(--text-secondary)]">
-                    Receive session announcements, schedule reminders, and progress milestones.
+                    Receive session announcements, schedule reminders, and progress milestones inside the FETCH workspace.
                   </div>
                 </div>
               </label>
@@ -674,9 +674,7 @@ export default function SettingsPage() {
                     );
                   } else {
                     setNotice(
-                      mode === "account"
-                        ? "Session completions and study timers are announced inside the workspace. Push notifications can be configured in preferences."
-                        : "Push notifications are not enabled. Study session and timer completions are announced inside FETCH.",
+                      "Study session and timer completions are announced inside FETCH. You can also enable browser alerts directly in the Pomodoro Timer.",
                     );
                   }
                 }}

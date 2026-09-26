@@ -15,50 +15,64 @@
 - [x] **Phase 5 — Physical-paper Scan intake**: PASS
 - [x] **Phase 6 — Focused Tutor and safe answer rendering**: PASS
 - [x] **Phase 7 — Friend profiles, messaging, and Live completion**: PASS
-- [ ] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: IN PROGRESS
-- [ ] **Phase 9 — Full regression, staged rollout, and production verification**: PENDING
+- [x] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: PASS
+- [ ] **Phase 9 — Full regression, staged rollout, and production verification**: IN PROGRESS
 
 ---
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 8 — Timer audio, notifications, curated music, and identity polish
-- **Next Safe Resume Point:** Phase 8 execution
+- **Current Phase:** Phase 9 — Full regression, staged rollout, and production verification
+- **Next Safe Resume Point:** Phase 9 verification & release checks
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 7 Verification & Summary
+## 3. Phase 8 Verification & Summary
 
 - **Status:** PASS
 - **Implemented Changes:**
-  1. Profile Extension & Unique Non-Email Usernames (`supabase/migrations/20260926060000_friend_profiles_and_live.sql`):
-     - Added `education_level`, `major_or_program`, `primary_subject`, `show_education`, `show_program`, `show_subject` (defaulting to false) to `public.profiles`.
-     - Automatic generation of random non-email usernames (`learner_<random_hex>`) on profile creation when no handle is provided.
-     - Backfilled all profiles missing usernames with `learner_<random_hex>`.
-  2. Public Safe Friend Profile RPC (`public.get_friend_profile(p_username text)`):
-     - Scoped projection returning only id, username, display_name, avatar_url, friendship status (`friend`, `pending_sent`, `pending_received`, `none`), and strictly opt-in academic details.
-     - Never leaks user emails, study packs, source texts, flashcard reviews, or private messages.
-  3. API & Routes:
-     - `GET /api/users/[username]`: Authenticated endpoint querying `get_friend_profile`.
-     - `/app/u/[username]`: Dedicated friend profile page with opt-in academic badge disclosures, DM action, and privacy protection.
-     - Linked friend names and search result handles on `/app/friends` to `/app/u/[username]`.
-  4. DM Permissions:
-     - Enforced `allow_direct_messages` check in `public.get_or_create_direct_conversation`.
-  5. Live Multiplayer Artifact Link:
-     - Added `artifact_id` column to `public.live_rooms`.
-     - Updated `create_live_room` to accept optional `p_artifact_id` while preserving backward compatibility when omitted.
-     - Updated `/api/live/rooms` to accept optional `artifactId`.
-- **Test Suite Results:** 33 test files passed (270 tests), 0 failures. Typecheck clean (0 errors).
+  1. Audio Controller & Fallbacks (`src/lib/audio/sound-controller.ts`):
+     - Support for start bark, completion alarm, and completion bark.
+     - Graceful missing-asset state: when MP3 assets are not yet present, falls back cleanly to gentle Web Audio synthesizer chimes without throwing unhandled exceptions.
+     - Deduplication: tracked session tokens (`resetPlayedSoundTokens`) enforce once-only playback per unique session cycle.
+  2. Permissioned Browser Notifications (`src/lib/notifications/study-notifications.ts`):
+     - Explicit user gesture opt-in via `requestNotificationPermission()`.
+     - Browser compatibility and permission state handling (`isNotificationSupported()`, `getNotificationPermission()`).
+     - Session completion notifications linking to `/assets/mascot/fetch-logo.png`.
+  3. Curated Music Collection (`src/lib/music/curated-tracks.ts` & `src/app/app/(workspace)/music/page.tsx`):
+     - Seeded the 3 approved classical and focus streams from Section B5 (`vivaldi-four-seasons`, `mozart-piano-concerto-21-andante`, `classical-study-brain-power`).
+     - Privacy-enhanced YouTube embeds (`youtube-nocookie.com`) with autoplay disabled.
+     - Usable fallback: direct "Open on YouTube" link for restricted networks, blocked third-party cookies, or embedded playback issues.
+  4. Timer Provider & Pomodoro UI (`src/components/tools/timer-provider.tsx` & `src/app/app/(workspace)/pomodoro/page.tsx`):
+     - Background tab throttling resilience: computes exact remaining duration from `endAt - now`.
+     - Once-only start and completion sound & notification triggers.
+     - Added Alerts & Notifications panel to the Pomodoro sidebar with sound toggle, chime test, and browser alerts toggle.
+     - Accessible live status region (`role="status"`, `aria-live="polite"`).
+  5. Settings Notification Copy (`src/app/app/(workspace)/settings/page.tsx`):
+     - Updated notification and study reminder copy to truthfully reflect in-app and browser notifications rather than remote push notifications.
+  6. App Identity:
+     - Verified consistent favicon (`/assets/mascot/fetch-logo.png`), fonts (Fredoka + Nunito), and title template in `src/app/layout.tsx`.
+- **Test Suite Results:** 34 test files passed (281 tests), 0 failures. Typecheck clean (0 errors).
 
 ---
 
-## 4. Phase 8 Scope & Plan
+## 4. Phase 9 Scope & Plan
 
-- Timer audio, notifications, curated music, and identity polish:
-  - Audio controller for start/completion bark and alarm with graceful fallback when audio assets are missing (audio-quality gate remains pending user MP3s as specified in plan section A6/Phase 8).
-  - Permissioned browser notifications via Notification API with explicit user opt-in.
-  - Pomodoro timer boundary tests and background throttling resilience (using `endAt` timestamps).
-  - Curated study music streams (`src/lib/music/curated-tracks.ts`) with the three approved public classical streams and graceful embed fallback.
-  - Verify app identity, metadata, and favicon across layouts.
+- Full regression, staged rollout, and production verification:
+  - Verify complete database schema synchronization across all applied migrations (`core.sql`).
+  - Run full test suite covering all 34 test suites (281 tests) and static typecheck.
+  - End-to-end verification of flows A through J as specified in section C of the implementation plan:
+    - Flow A: Large quiz generation (up to 50 questions, bounded batches, duplicate prevention).
+    - Flow B: PDF large reviewer (source document linked, extraction status).
+    - Flow C: Physical paper intake (OCR service, reordering, review).
+    - Flow D: Generated flashcards (delayed retry queue, mastery).
+    - Flow E: Manual flashcards (create deck, study, RLS isolation).
+    - Flow F: Focused tutor (source relevance retrieval, SafeMarkdown, bounded history).
+    - Flow G: Pomodoro timer (throttling resilience, sound, browser alerts).
+    - Flow H: Friend profile (public-safe projection, privacy).
+    - Flow I: Direct chat (canonical pair reuse, participant UUID).
+    - Flow J: Live multiplayer (artifact link, server-authoritative scoring).
+  - Prepare final staging / production signoff documentation.
+
 

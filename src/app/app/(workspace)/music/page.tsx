@@ -2,20 +2,24 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
+  ArrowSquareOut,
   Headphones,
   MusicNotes,
+  Play,
   Timer,
   UploadSimple,
 } from "@phosphor-icons/react";
 import { useMusic } from "@/components/tools/music-provider";
 import { Button } from "@/components/ui/button";
 import { youtubeEmbed } from "@/lib/youtube";
+import { CURATED_TRACKS, type CuratedTrack } from "@/lib/music/curated-tracks";
 export default function MusicPage() {
   const music = useMusic();
   const [tab, setTab] = useState("Local files"),
     [url, setUrl] = useState("");
   const [embed, setEmbed] = useState<ReturnType<typeof youtubeEmbed>>(null),
     [error, setError] = useState("");
+  const [curatedTrack, setCuratedTrack] = useState<CuratedTrack | null>(null);
   return (
     <div className="workspace">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -53,8 +57,9 @@ export default function MusicPage() {
             onClick={() => {
               setTab(t);
               setEmbed(null);
+              setCuratedTrack(null);
               setError("");
-              if (t === "YouTube") music.pause();
+              if (t === "YouTube" || t === "Curated music") music.pause();
             }}
           >
             {t}
@@ -211,32 +216,123 @@ export default function MusicPage() {
       )}
       {tab === "Curated music" && (
         <section className="surface-card mt-5 p-6">
-          <div className="py-12 text-center">
-            <Headphones
-              size={48}
-              className="mx-auto text-[var(--fetch-blue-700)]"
-            />
-            <h2 className="font-display mt-4 text-2xl font-semibold">
-              Curated study streams are on the way
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
-              Licensed study channels (Lo-Fi, Ambient, Classical, Nature) are planned for an upcoming release. In the meantime, play your own local music files or paste any study stream from YouTube.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => setTab("Local files")}
-              >
-                Choose local music
-              </Button>
-              <Button
-                variant="quiet"
-                onClick={() => setTab("YouTube")}
-              >
-                Use YouTube player
-              </Button>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-2xl font-semibold">
+                Curated study streams
+              </h2>
+              <p className="mt-2 max-w-xl text-sm text-[var(--text-secondary)]">
+                Hand-picked classical and focus streams for uninterrupted study sessions. Playback connects to YouTube’s privacy-enhanced player; video terms and restrictions apply.
+              </p>
             </div>
+            <p className="rounded-full bg-[var(--surface-subtle)] px-3 py-1 text-xs font-bold text-[var(--text-secondary)]">
+              {CURATED_TRACKS.length} curated tracks
+            </p>
           </div>
+
+          {curatedTrack && music.externalActive && (
+            <div className="mt-6 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-subtle)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-[var(--fetch-blue-700)]">
+                    Now Streaming · {curatedTrack.category}
+                  </span>
+                  <h3 className="truncate text-base font-bold text-[var(--text-primary)]">
+                    {curatedTrack.title}
+                  </h3>
+                </div>
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    setCuratedTrack(null);
+                    music.setExternalActive(false);
+                  }}
+                  className="shrink-0"
+                >
+                  Close stream
+                </Button>
+              </div>
+
+              <iframe
+                title={`YouTube player: ${curatedTrack.title}`}
+                src={curatedTrack.embedUrl}
+                className="aspect-video min-h-[220px] w-full rounded-xl border-0"
+                allow="encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+
+              <p className="mt-3 text-sm text-[var(--text-secondary)]">
+                If embedding is blocked or playback is unavailable on your device,{" "}
+                <a
+                  href={curatedTrack.watchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 font-bold underline"
+                >
+                  open on YouTube
+                  <ArrowSquareOut size={16} />
+                </a>.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {CURATED_TRACKS.map((track) => {
+              const isSelected = curatedTrack?.id === track.id && music.externalActive;
+              return (
+                <div
+                  key={track.id}
+                  className={`flex flex-col justify-between rounded-xl border p-5 transition-shadow ${
+                    isSelected
+                      ? "border-[var(--fetch-blue-500)] bg-[var(--fetch-blue-50)] shadow-sm"
+                      : "border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-[var(--border-strong)]"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-md bg-[var(--surface-subtle)] px-2 py-0.5 text-xs font-bold text-[var(--fetch-blue-700)]">
+                        {track.category}
+                      </span>
+                      <a
+                        href={track.watchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open directly on YouTube"
+                        className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        aria-label={`Open ${track.title} on YouTube`}
+                      >
+                        <ArrowSquareOut size={18} />
+                      </a>
+                    </div>
+                    <h3 className="mt-3 text-sm font-bold leading-snug text-[var(--text-primary)]">
+                      {track.title}
+                    </h3>
+                  </div>
+
+                  <div className="mt-5 pt-3">
+                    <Button
+                      variant={isSelected ? "primary" : "secondary"}
+                      className="w-full"
+                      onClick={() => {
+                        music.pause();
+                        music.setExternalActive(true);
+                        setCuratedTrack(track);
+                        setEmbed(null);
+                      }}
+                    >
+                      <Play />
+                      {isSelected ? "Now Playing" : "Play stream"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="notice mt-6">
+            Track titles are requester-provided labels. Displayed streams link to their official public YouTube players. No video or audio files are downloaded or hosted by FETCH.
+          </p>
         </section>
       )}
     </div>

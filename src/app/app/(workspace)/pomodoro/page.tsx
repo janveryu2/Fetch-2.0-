@@ -6,23 +6,42 @@ import {
   Pause,
   Play,
   ArrowCounterClockwise,
+  Bell,
+  BellSlash,
+  SpeakerSimpleHigh,
+  SpeakerSimpleSlash,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { useTimer } from "@/components/tools/timer-provider";
 import { useDemo } from "@/components/app/demo-provider";
-import { tickTimer, timerText, type TimerMode } from "@/lib/focus-timer";
+import { timerText, type TimerMode } from "@/lib/focus-timer";
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+} from "@/lib/notifications/study-notifications";
+import { playStudySound } from "@/lib/audio/sound-controller";
+import { useState, useEffect } from "react";
+
 export default function PomodoroPage() {
-  const { timer, setTimer, ready } = useTimer();
+  const {
+    timer,
+    setTimer,
+    ready,
+    soundEnabled,
+    setSoundEnabled,
+    notificationsEnabled,
+    setNotificationsEnabled,
+    requestNotifications,
+    startTimer,
+    pauseTimer,
+    resetTimer,
+  } = useTimer();
   const { packs } = useDemo();
-  function mode(mode: TimerMode) {
-    setTimer((t) => ({
-      ...t,
-      mode,
-      remaining: t.durations[mode] * 60,
-      endAt: null,
-      completed: false,
-    }));
-  }
+  const [notifPermission, setNotifPermission] = useState<string>("default");
+
+  useEffect(() => {
+    setNotifPermission(getNotificationPermission());
+  }, []);
   return (
     <div className="workspace">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -48,7 +67,7 @@ export default function PomodoroPage() {
                   key={m}
                   disabled={!ready}
                   aria-pressed={timer.mode === m}
-                  onClick={() => mode(m)}
+                  onClick={() => resetTimer(m)}
                 >
                   {m}
                 </button>
@@ -76,12 +95,15 @@ export default function PomodoroPage() {
               max={timer.durations[timer.mode] * 60}
               value={timer.durations[timer.mode] * 60 - timer.remaining}
             />
+            <div role="status" aria-live="polite" className="sr-only">
+              {timer.completed ? `${timer.mode} session completed.` : ""}
+            </div>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
             {timer.completed ? (
               <Button
                 onClick={() =>
-                  mode(timer.mode === "Focus" ? "Short break" : "Focus")
+                  resetTimer(timer.mode === "Focus" ? "Short break" : "Focus")
                 }
               >
                 Prepare {timer.mode === "Focus" ? "a break" : "to focus"}
@@ -89,17 +111,7 @@ export default function PomodoroPage() {
             ) : (
               <Button
                 disabled={!ready}
-                onClick={() =>
-                  setTimer((t) =>
-                    t.endAt
-                      ? { ...tickTimer(t, Date.now()), endAt: null }
-                      : {
-                          ...t,
-                          endAt: Date.now() + t.remaining * 1000,
-                          completed: false,
-                        },
-                  )
-                }
+                onClick={timer.endAt ? pauseTimer : startTimer}
               >
                 {timer.endAt ? (
                   <>
@@ -119,7 +131,7 @@ export default function PomodoroPage() {
             <Button
               variant="secondary"
               disabled={!ready}
-              onClick={() => mode(timer.mode)}
+              onClick={() => resetTimer(timer.mode)}
             >
               <ArrowCounterClockwise />
               Reset
@@ -190,6 +202,75 @@ export default function PomodoroPage() {
                 Open selected StudyPack
               </Link>
             )}
+          </section>
+          <section className="surface-card p-5">
+            <h2 className="font-display text-xl font-semibold">
+              Alerts & notifications
+            </h2>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
+              Stay in rhythm with audio cues and optional browser alerts.
+            </p>
+            <div className="mt-4 space-y-4">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+                  {soundEnabled ? <SpeakerSimpleHigh size={18} /> : <SpeakerSimpleSlash size={18} />}
+                  Sound effects
+                </span>
+                <input
+                  type="checkbox"
+                  checked={soundEnabled}
+                  onChange={(e) => setSoundEnabled(e.target.checked)}
+                  className="size-5 rounded border-[var(--border-strong)] accent-[var(--action-bg)]"
+                />
+              </label>
+
+              {soundEnabled && (
+                <div className="pl-6">
+                  <Button
+                    variant="quiet"
+                    className="min-h-8 text-xs font-bold"
+                    onClick={() => playStudySound("start-bark")}
+                  >
+                    Test chime
+                  </Button>
+                </div>
+              )}
+
+              <div className="border-t border-[var(--border-subtle)] pt-3">
+                <label className="flex cursor-pointer items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]">
+                    {notificationsEnabled ? <Bell size={18} /> : <BellSlash size={18} />}
+                    Browser alerts
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={notificationsEnabled}
+                    disabled={notifPermission === "unsupported" || notifPermission === "denied"}
+                    onChange={async (e) => {
+                      if (e.target.checked) {
+                        const granted = await requestNotifications();
+                        setNotifPermission(getNotificationPermission());
+                        if (!granted) {
+                          setNotificationsEnabled(false);
+                        }
+                      } else {
+                        setNotificationsEnabled(false);
+                      }
+                    }}
+                    className="size-5 rounded border-[var(--border-strong)] accent-[var(--action-bg)] disabled:opacity-50"
+                  />
+                </label>
+                <p className="mt-1.5 text-xs text-[var(--text-secondary)]">
+                  {notifPermission === "unsupported"
+                    ? "Notifications are not supported in this browser."
+                    : notifPermission === "denied"
+                      ? "Notifications are blocked in your browser settings. In-app status is still active."
+                      : notificationsEnabled
+                        ? "Browser alerts will sound when sessions finish, even from another tab."
+                        : "Notify when sessions finish while working in other tabs."}
+                </p>
+              </div>
+            </div>
           </section>
           <div className="flex items-center gap-3">
             <Image
