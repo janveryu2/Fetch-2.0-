@@ -214,7 +214,7 @@ create table if not exists private.source_documents (
   content_hash text not null,
   page_count integer,
   extracted_text text,
-  extraction_status text not null default 'pending' check (extraction_status in ('pending', 'extracted', 'failed')),
+  extraction_status text not null default 'pending' check (extraction_status in ('pending', 'extracted', 'processed', 'failed')),
   linked_pack_id uuid references public.study_packs(id) on delete set null,
   failure_reason text,
   cleanup_state text not null default 'retained' check (cleanup_state in ('retained', 'cleaned', 'failed')),
@@ -2361,9 +2361,10 @@ begin
     raise exception 'Authentication required.';
   end if;
 
+  -- Validate study pack exists and caller is the owner
   if not exists (
     select 1 from public.study_packs
-    where id = p_pack_id and (owner_id = v_caller or visibility = 'public')
+    where id = p_pack_id and owner_id = v_caller
   ) then
     raise exception 'Study pack not found or access denied.';
   end if;
@@ -2394,7 +2395,7 @@ begin
   values (v_room_id, v_caller, 0);
 
   for v_q in
-    select q.id, q.prompt, q.choices, qk.answer, qk.explanation
+    select q.id, q.prompt, coalesce(q.choices, '[]'::jsonb) as choices, qk.answer, qk.explanation
     from public.questions q
     left join private.question_keys qk on qk.question_id = q.id
     where q.pack_id = p_pack_id

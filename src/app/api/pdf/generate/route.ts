@@ -292,11 +292,19 @@ export async function POST(request: Request) {
   });
 
   // Link document to pack
-  await account.supabase.rpc("update_source_document", {
+  const { error: updateDocError } = await account.supabase.rpc("update_source_document", {
     p_doc_id: parsed.data.docId,
-    p_extraction_status: "processed",
+    p_extraction_status: "extracted",
     p_linked_pack_id: saved.id,
   });
+
+  if (updateDocError) {
+    console.error("[PDF Source Document Link Warning]", {
+      docId: parsed.data.docId,
+      packId: saved.id,
+      error: updateDocError.message,
+    });
+  }
 
   return Response.json({
     provider,

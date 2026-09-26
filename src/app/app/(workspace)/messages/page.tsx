@@ -46,6 +46,7 @@ interface MessageItem {
 }
 
 interface FriendItem {
+  id: string;
   userId: string;
   username: string | null;
   displayName: string;
@@ -96,7 +97,18 @@ export default function MessagesPage() {
 
       if (friendsRes.ok) {
         const friendsData = await friendsRes.json();
-        setFriends(friendsData.friends || []);
+        const rawFriends = friendsData.friends || [];
+        const normalized: FriendItem[] = rawFriends.map((f: { id?: string; userId?: string; username?: string | null; displayName?: string; avatarUrl?: string | null }) => {
+          const friendId = f.id || f.userId || "";
+          return {
+            id: friendId,
+            userId: friendId,
+            username: f.username ?? null,
+            displayName: f.displayName || "Study Buddy",
+            avatarUrl: f.avatarUrl ?? null,
+          };
+        });
+        setFriends(normalized);
       }
     } catch {
       setStatusMessage("Failed to load conversations.");
@@ -208,8 +220,16 @@ export default function MessagesPage() {
 
   // Start new conversation with a friend
   async function startConversation(friendId: string) {
-    if (mode !== "account") return;
+    if (mode !== "account" || !friendId) return;
     setStatusMessage("");
+
+    // If a conversation with this participant already exists, activate it
+    const existing = conversations.find((c) => c.participant?.id === friendId);
+    if (existing) {
+      setActiveConversation(existing);
+      return;
+    }
+
     try {
       const res = await fetch("/api/conversations", {
         method: "POST",
@@ -313,7 +333,7 @@ export default function MessagesPage() {
   );
 
   const friendsWithoutConversation = friends.filter(
-    (f) => !conversations.some((c) => c.participant.id === f.userId)
+    (f) => !conversations.some((c) => c.participant?.id === f.id)
   );
 
   return (
@@ -391,8 +411,8 @@ export default function MessagesPage() {
                   <div className="flex flex-col gap-1.5">
                     {friendsWithoutConversation.map((f) => (
                       <button
-                        key={f.userId}
-                        onClick={() => startConversation(f.userId)}
+                        key={f.id}
+                        onClick={() => startConversation(f.id)}
                         className="flex items-center justify-between gap-2 rounded-lg p-2 text-left hover:bg-[var(--surface-subtle)] text-sm"
                       >
                         <div className="flex items-center gap-2 min-w-0">
