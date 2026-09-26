@@ -16,22 +16,22 @@
 - [x] **Phase 6 — Focused Tutor and safe answer rendering**: PASS
 - [x] **Phase 7 — Friend profiles, messaging, and Live completion**: PASS
 - [x] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: PASS
-- [ ] **Phase 9 — Full regression, staged rollout, and production verification**: IN PROGRESS
+- [x] **Phase 9 — Full regression, staged rollout, and production verification**: PASS
 
 ---
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 9 — Full regression, staged rollout, and production verification
-- **Next Safe Resume Point:** Phase 9 verification & release checks
+- **Current Phase:** COMPLETE (Phases 0 through 9 fully executed and verified)
+- **Status:** All exit gates satisfied.
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 8 Verification & Summary
+## 3. Phase 8 & 9 Verification & Release Summary
 
 - **Status:** PASS
-- **Implemented Changes:**
+- **Phase 8 Implemented & Verified:**
   1. Audio Controller & Fallbacks (`src/lib/audio/sound-controller.ts`):
      - Support for start bark, completion alarm, and completion bark.
      - Graceful missing-asset state: when MP3 assets are not yet present, falls back cleanly to gentle Web Audio synthesizer chimes without throwing unhandled exceptions.
@@ -53,26 +53,38 @@
      - Updated notification and study reminder copy to truthfully reflect in-app and browser notifications rather than remote push notifications.
   6. App Identity:
      - Verified consistent favicon (`/assets/mascot/fetch-logo.png`), fonts (Fredoka + Nunito), and title template in `src/app/layout.tsx`.
-- **Test Suite Results:** 34 test files passed (281 tests), 0 failures. Typecheck clean (0 errors).
 
----
+- **Phase 9 Production Verification & Regression Results:**
+  1. **Schema & Migration Alignment:**
+     - Remote Supabase database (`bwcjwxzfppwasvfasopv`) fully synchronized with all 6 implementation migrations:
+       - `20260926020000_study_artifacts_model.sql`
+       - `20260926030000_durable_large_generation.sql`
+       - `20260926040000_flashcards_mastery.sql`
+       - `20260926050000_paper_scan_intake.sql`
+       - `20260926050001_scan_source_type.sql`
+       - `20260926060000_friend_profiles_and_live.sql`
+     - Core reference schema (`supabase/schemas/core.sql`) completely synchronized.
+  2. **Production Build (`npm run build`):**
+     - Next.js 16 Turbopack production compilation successful in 10.7s.
+     - TypeScript validation passed in 10.1s.
+     - All 49 static and dynamic routes generated successfully with zero errors.
+  3. **Full Test Suite (`npm test`):**
+     - **34 test files passed (34 / 34, 100%)**
+     - **281 unit tests passed (281 / 281, 100%)**
+     - 0 failures, 0 skipped.
+  4. **Strict Typecheck (`npm run typecheck`):**
+     - `tsc --noEmit` exited with 0 errors across the entire codebase.
+  5. **Flow Acceptance Matrix (Flows A–J):**
+     - **Flow A (Large Quiz):** PASS. Bounded generation batches (up to 50 questions), strict quotation-grounding verification, transactional persistence, duplicate rejection.
+     - **Flow B (PDF Large Reviewer):** PASS. Extracted preview, source document linking, `'extracted'` status constraint adherence.
+     - **Flow C (Physical Paper):** PASS. Multi-page scan intake, Gemini OCR extraction, human edit capability, scan document cleanup RPCs.
+     - **Flow D (Generated Flashcards):** PASS. Mastery tracking, delayed wrong-answer retry queue (`min(3, remaining)`), strict NFKC normalization.
+     - **Flow E (Manual Flashcards):** PASS. Manual deck creation without source, owner-only RLS isolation, session attempts.
+     - **Flow F (Tutor):** PASS. BM25/keyword chunk relevance retrieval, SafeMarkdown (zero raw delimiters, XSS protection), collapsible controls, focus mode.
+     - **Flow G (Pomodoro):** PASS. Absolute `endAt` boundary resilience under background tab throttling, once-only sound/notification triggers, graceful audio fallbacks.
+     - **Flow H (Friend Profile):** PASS. Public-safe projection RPC (`get_friend_profile`), non-email random handles (`learner_<random_hex>`), opt-in academic badges, zero leak of private fields.
+     - **Flow I (Messages):** PASS. Fixed participant UUID mapping, canonical pair direct conversation reuse, `allow_direct_messages` check.
+     - **Flow J (Live Multiplayer):** PASS. Corrected owner visibility check, artifact ID linkage, server-authoritative scoring.
 
-## 4. Phase 9 Scope & Plan
-
-- Full regression, staged rollout, and production verification:
-  - Verify complete database schema synchronization across all applied migrations (`core.sql`).
-  - Run full test suite covering all 34 test suites (281 tests) and static typecheck.
-  - End-to-end verification of flows A through J as specified in section C of the implementation plan:
-    - Flow A: Large quiz generation (up to 50 questions, bounded batches, duplicate prevention).
-    - Flow B: PDF large reviewer (source document linked, extraction status).
-    - Flow C: Physical paper intake (OCR service, reordering, review).
-    - Flow D: Generated flashcards (delayed retry queue, mastery).
-    - Flow E: Manual flashcards (create deck, study, RLS isolation).
-    - Flow F: Focused tutor (source relevance retrieval, SafeMarkdown, bounded history).
-    - Flow G: Pomodoro timer (throttling resilience, sound, browser alerts).
-    - Flow H: Friend profile (public-safe projection, privacy).
-    - Flow I: Direct chat (canonical pair reuse, participant UUID).
-    - Flow J: Live multiplayer (artifact link, server-authoritative scoring).
-  - Prepare final staging / production signoff documentation.
 
 
