@@ -133,7 +133,7 @@ export function StudyPackDetail({ packId }: { packId: string }) {
         <div className="flex flex-wrap items-center gap-3">
           {pack.questions.length > 0 && (
             <Button asChild size="lg">
-              <Link href={`/app/study/${pack.id}`}>
+              <Link href={`/app/study/${pack.id}`} aria-label="Study">
                 <GameController size={22} weight="fill" /> {hasActiveDraft ? "Resume Quiz" : "Study Quiz"}
               </Link>
             </Button>

@@ -112,7 +112,7 @@ describe("Phase 2 - Artifact Model & Creation Choice", () => {
         error: null,
       });
 
-      const fakeClient = { rpc: mockRpc } as any;
+      const fakeClient = { rpc: mockRpc } as unknown as Parameters<typeof persistStudyPackServer>[0]["fallbackClient"];
 
       const result = await persistStudyPackServer({
         ownerId: VALID_USER_ID,

@@ -115,6 +115,14 @@ describe("GET /api/progress API Route", () => {
             }),
           };
         }
+        if (table === "flashcard_sessions") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }
         return {};
       }),
     };

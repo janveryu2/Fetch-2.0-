@@ -12,7 +12,6 @@ import {
   CheckCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 export interface ScanPageItem {
   id: string;

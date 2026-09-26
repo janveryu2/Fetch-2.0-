@@ -1,5 +1,10 @@
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
-import { computeProgressSummary, type SessionRow, type PackRow } from "@/lib/study-progress";
+import {
+  computeProgressSummary,
+  type SessionRow,
+  type PackRow,
+  type FlashcardSessionRow,
+} from "@/lib/study-progress";
 import { createApiErrorResponse } from "@/lib/api-errors";
 
 export async function GET() {
@@ -14,7 +19,7 @@ export async function GET() {
 
   const { supabase, userId } = context;
 
-  const [sessionsRes, packsRes] = await Promise.all([
+  const [sessionsRes, packsRes, flashcardsRes] = await Promise.all([
     supabase
       .from("study_sessions")
       .select("id,pack_id,score,correct_count,question_count,completed_at")
@@ -25,6 +30,14 @@ export async function GET() {
       .from("study_packs")
       .select("id,title")
       .eq("owner_id", userId),
+    typeof supabase.from("flashcard_sessions")?.select === "function"
+      ? supabase
+          .from("flashcard_sessions")
+          .select("id,status,first_try_correct,cards_mastered,total_attempts,completed_at,updated_at")
+          .eq("owner_id", userId)
+          .order("updated_at", { ascending: false })
+          .limit(200)
+      : Promise.resolve({ data: [] as FlashcardSessionRow[], error: null }),
   ]);
 
   if (sessionsRes.error) {
@@ -38,8 +51,9 @@ export async function GET() {
 
   const sessions = (sessionsRes.data || []) as SessionRow[];
   const packs = (packsRes.data || []) as PackRow[];
+  const flashcardSessions = (flashcardsRes.data || []) as FlashcardSessionRow[];
 
-  const summary = computeProgressSummary(sessions, packs);
+  const summary = computeProgressSummary(sessions, packs, flashcardSessions);
 
   return Response.json(summary);
 }

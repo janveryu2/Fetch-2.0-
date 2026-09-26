@@ -48,8 +48,16 @@ export class GroqTutorProvider {
     }
 
     const instructions = params.instructions || DEFAULT_TUTOR_INSTRUCTIONS;
-    // Bounded history: keep at most latest 6 turns (12 messages)
-    const boundedHistory = (params.history || []).slice(-12);
+    // Bounded history: keep at most latest 6 turns (12 messages) and at most 4,000 chars total
+    const rawHistory = (params.history || []).slice(-12);
+    const boundedHistory: TutorChatMessage[] = [];
+    let historyChars = 0;
+    for (let i = rawHistory.length - 1; i >= 0; i--) {
+      const msg = rawHistory[i];
+      if (historyChars + msg.content.length > 4000 && boundedHistory.length > 0) break;
+      boundedHistory.unshift(msg);
+      historyChars += msg.content.length;
+    }
 
     let sourcePrompt = "";
     if (params.source && params.source.trim().length > 0) {

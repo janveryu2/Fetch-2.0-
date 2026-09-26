@@ -342,7 +342,7 @@ export default function MessagesPage() {
         {/* Desktop / Tablet Sidebar */}
         <aside className="hidden border-r border-[var(--border-subtle)] p-5 md:flex md:flex-col overflow-y-auto">
           <div className="flex items-center justify-between">
-            <h1 className="font-display text-2xl font-semibold">Messages</h1>
+            <div className="font-display text-2xl font-semibold">Messages</div>
             <Badge tone={mode === "account" ? "success" : "neutral"}>
               {mode === "account" ? "Direct chats" : "Local preview"}
             </Badge>
@@ -460,11 +460,11 @@ export default function MessagesPage() {
               />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="font-extrabold text-sm sm:text-base truncate">
+                  <h1 className="font-extrabold text-sm sm:text-base truncate">
                     {mode === "account"
-                      ? activeConversation?.participant.displayName || "Direct Messages"
-                      : "FETCH Demo"}
-                  </h2>
+                      ? activeConversation?.participant.displayName || "Messages"
+                      : "Messages"}
+                  </h1>
                   <Badge tone={mode === "account" ? "success" : "warning"}>
                     {mode === "account" ? "Direct chat" : "Preview"}
                   </Badge>

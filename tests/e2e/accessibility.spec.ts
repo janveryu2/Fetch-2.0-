@@ -41,6 +41,13 @@ test.describe("Phase 5: Accessibility and System Consistency (WCAG 2.2 AA)", () 
     await expect(pdfTab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tabpanel", { name: /PDF/i })).toBeVisible();
 
+    // Press ArrowRight to move to Scan notes tab
+    await page.keyboard.press("ArrowRight");
+    const scanTab = page.getByRole("tab", { name: /Scan notes/i });
+    await expect(scanTab).toBeFocused();
+    await expect(scanTab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tabpanel", { name: /Scan notes/i })).toBeVisible();
+
     // Press ArrowRight to move to Link tab
     await page.keyboard.press("ArrowRight");
     const urlTab = page.getByRole("tab", { name: /Link/i });
@@ -48,10 +55,10 @@ test.describe("Phase 5: Accessibility and System Consistency (WCAG 2.2 AA)", () 
     await expect(urlTab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tabpanel", { name: /Link/i })).toBeVisible();
 
-    // Press ArrowLeft to return to PDF tab
+    // Press ArrowLeft to return to Scan notes tab
     await page.keyboard.press("ArrowLeft");
-    await expect(pdfTab).toBeFocused();
-    await expect(pdfTab).toHaveAttribute("aria-selected", "true");
+    await expect(scanTab).toBeFocused();
+    await expect(scanTab).toHaveAttribute("aria-selected", "true");
 
     // Press Home to return to first tab
     await page.keyboard.press("Home");

@@ -1,5 +1,12 @@
 import { localDate, studyStreak, addDays } from "@/lib/study-stats";
 
+export interface FlashcardProgressStats {
+  cardsMastered: number;
+  firstTryCorrect: number;
+  totalAttempts: number;
+  completedSessions: number;
+}
+
 export interface ProgressSummary {
   streakCount: number;
   averageAccuracy: number;
@@ -13,6 +20,7 @@ export interface ProgressSummary {
     averageScore: number;
     attemptsCount: number;
   }[];
+  flashcards?: FlashcardProgressStats;
 }
 
 export interface SessionRow {
@@ -24,6 +32,16 @@ export interface SessionRow {
   completed_at: string;
 }
 
+export interface FlashcardSessionRow {
+  id: string;
+  status: string;
+  first_try_correct: number;
+  cards_mastered: number;
+  total_attempts: number;
+  completed_at?: string | null;
+  updated_at?: string;
+}
+
 export interface PackRow {
   id: string;
   title: string;
@@ -31,14 +49,18 @@ export interface PackRow {
 
 export function computeProgressSummary(
   sessions: SessionRow[],
-  packs: PackRow[] = []
+  packs: PackRow[] = [],
+  flashcardSessions: FlashcardSessionRow[] = []
 ): ProgressSummary {
   const packMap = new Map(packs.map((p) => [p.id, p.title]));
 
-  // Convert sessions for streak calculation
-  const attemptsForStreak = sessions.map((s) => ({
-    completedAt: s.completed_at,
-  }));
+  // Convert sessions and completed flashcards for streak calculation
+  const attemptsForStreak = [
+    ...sessions.map((s) => ({ completedAt: s.completed_at })),
+    ...flashcardSessions
+      .filter((fs) => fs.completed_at || fs.status === "mastered")
+      .map((fs) => ({ completedAt: fs.completed_at || fs.updated_at || new Date().toISOString() })),
+  ];
   const streakCount = studyStreak(attemptsForStreak);
 
   const completedSessions = sessions.length;
@@ -90,6 +112,13 @@ export function computeProgressSummary(
   // Sort weak packs by average score ascending (lowest score first)
   weakPacks.sort((a, b) => a.averageScore - b.averageScore);
 
+  const flashcardStats: FlashcardProgressStats = {
+    cardsMastered: flashcardSessions.reduce((sum, s) => sum + (s.cards_mastered || 0), 0),
+    firstTryCorrect: flashcardSessions.reduce((sum, s) => sum + (s.first_try_correct || 0), 0),
+    totalAttempts: flashcardSessions.reduce((sum, s) => sum + (s.total_attempts || 0), 0),
+    completedSessions: flashcardSessions.filter((s) => s.status === "mastered").length,
+  };
+
   return {
     streakCount,
     averageAccuracy,
@@ -98,5 +127,6 @@ export function computeProgressSummary(
     correctAnswers,
     dailyActivity,
     weakPacks,
+    flashcards: flashcardStats,
   };
 }

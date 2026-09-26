@@ -17,7 +17,6 @@ vi.mock("@/lib/scan/ocr-service", () => ({
 import { POST as handleUpload } from "@/app/api/scan/upload/route";
 import { POST as handleExtract } from "@/app/api/scan/extract/route";
 import {
-  GET as handleGetDoc,
   PATCH as handlePatchDoc,
   DELETE as handleDeleteDoc,
 } from "@/app/api/scan/documents/[id]/route";

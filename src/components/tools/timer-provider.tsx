@@ -22,7 +22,6 @@ import { useDemo } from "@/components/app/demo-provider";
 import { playStudySound } from "@/lib/audio/sound-controller";
 import {
   sendStudyNotification,
-  isNotificationSupported,
   requestNotificationPermission,
 } from "@/lib/notifications/study-notifications";
 
@@ -52,22 +51,29 @@ export function TimerProvider({
   const { userId, mode } = useDemo();
   const [timer, setTimer] = useState<FocusTimer>(() => createInitialTimer(preferredFocusMinutes));
   const [ready, setReady] = useState(false);
-  const [soundEnabled, setSoundEnabledState] = useState(true);
-  const [notificationsEnabled, setNotificationsEnabledState] = useState(false);
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const s = localStorage.getItem("fetch-timer-sound");
+      return s !== null ? s === "true" : true;
+    } catch {
+      return true;
+    }
+  });
+  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const n = localStorage.getItem("fetch-timer-notifications");
+      return n !== null ? n === "true" : false;
+    } catch {
+      return false;
+    }
+  });
   const queuedFocusMinutesRef = useRef<number | null>(null);
   const initialMountRef = useRef(true);
   const hasAnnouncedCompletionRef = useRef(false);
 
   const storageKey = mode === "account" && userId ? `fetch-focus-v1:${userId}` : "fetch-focus-v1:demo";
-
-  useEffect(() => {
-    try {
-      const storedSound = localStorage.getItem("fetch-timer-sound");
-      if (storedSound !== null) setSoundEnabledState(storedSound === "true");
-      const storedNotif = localStorage.getItem("fetch-timer-notifications");
-      if (storedNotif !== null) setNotificationsEnabledState(storedNotif === "true");
-    } catch {}
-  }, []);
 
   const setSoundEnabled = (val: boolean) => {
     setSoundEnabledState(val);
@@ -201,11 +207,25 @@ export function TimerProvider({
   }, []);
   // Trigger sound & notification once upon session completion
   useEffect(() => {
-    if (timer.completed && !hasAnnouncedCompletionRef.current) {
+    if (timer.completed) {
+      if (hasAnnouncedCompletionRef.current) return;
       hasAnnouncedCompletionRef.current = true;
-      const sessionToken = `completion-${timer.mode}-${Date.now()}`;
+
+      // Stable token across tabs & reloads using mode, duration, and session start
+      const sessionToken = `completion-${timer.mode}-${timer.durations[timer.mode]}-${timer.packId || "general"}`;
+
+      // Check cross-tab deduplication
+      try {
+        const lastAnnounced = localStorage.getItem("fetch-timer-last-announced");
+        if (lastAnnounced === sessionToken) {
+          return;
+        }
+        localStorage.setItem("fetch-timer-last-announced", sessionToken);
+      } catch {}
+
       if (soundEnabled) {
-        playStudySound("complete-alarm", sessionToken, { soundEnabled });
+        void playStudySound("complete-alarm", sessionToken, { soundEnabled });
+        void playStudySound("complete-bark", `${sessionToken}-bark`, { soundEnabled });
       }
       if (notificationsEnabled) {
         sendStudyNotification(`${timer.mode} session complete!`, {
@@ -216,24 +236,24 @@ export function TimerProvider({
           tag: `fetch-timer-${timer.mode.toLowerCase()}`,
         });
       }
-    } else if (!timer.completed) {
+    } else {
       hasAnnouncedCompletionRef.current = false;
+      try {
+        localStorage.removeItem("fetch-timer-last-announced");
+      } catch {}
     }
-  }, [timer.completed, timer.mode, soundEnabled, notificationsEnabled]);
+  }, [timer.completed, timer.mode, timer.durations, timer.packId, soundEnabled, notificationsEnabled]);
 
   const startTimer = () => {
-    setTimer((t) => {
-      const nextTimer = {
-        ...t,
-        endAt: Date.now() + t.remaining * 1000,
-        completed: false,
-      };
-      if (soundEnabled) {
-        const sessionToken = `start-${t.mode}-${Date.now()}`;
-        playStudySound("start-bark", sessionToken, { soundEnabled });
-      }
-      return nextTimer;
-    });
+    if (soundEnabled) {
+      const sessionToken = `start-${timer.mode}-${Date.now()}`;
+      void playStudySound("start-bark", sessionToken, { soundEnabled });
+    }
+    setTimer((t) => ({
+      ...t,
+      endAt: Date.now() + t.remaining * 1000,
+      completed: false,
+    }));
   };
 
   const pauseTimer = () => {

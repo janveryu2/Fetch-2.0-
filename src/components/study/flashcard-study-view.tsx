@@ -6,7 +6,6 @@ import {
   ArrowsClockwise,
   CheckCircle,
   XCircle,
-  Sparkle,
   Trophy,
   ArrowCounterClockwise,
 } from "@phosphor-icons/react";
@@ -43,7 +42,32 @@ export function FlashcardStudyView({
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [threeMissCard, setThreeMissCard] = useState<{
+    card: FlashcardItem;
+    nextState: FlashcardSessionState;
+  } | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleStudyAgain() {
+    const newClientSessionId = crypto.randomUUID();
+    try {
+      const res = await fetch("/api/flashcards/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artifactId, clientSessionId: newClientSessionId }),
+      });
+      const data = res.ok ? await res.json() : null;
+      const sid = data?.sessionId || newClientSessionId;
+      setSessionState(initializeFlashcardSession(sid, cards));
+    } catch {
+      setSessionState(initializeFlashcardSession(newClientSessionId, cards));
+    }
+    setIsFlipped(false);
+    setLastGrade(null);
+    setFeedbackMessage(null);
+    setThreeMissCard(null);
+  }
 
   // Load cards and initialize session
   useEffect(() => {
@@ -55,7 +79,7 @@ export function FlashcardStudyView({
       })
       .then((data) => {
         if (mounted && data?.cards) {
-          const rawCards: FlashcardItem[] = data.cards.map((c: any) => ({
+          const rawCards: FlashcardItem[] = data.cards.map((c: { id: string; front: string; back: string; aliases?: string[]; position: number }) => ({
             id: c.id,
             front: c.front,
             back: c.back,
@@ -131,21 +155,28 @@ export function FlashcardStudyView({
   const currentCardId = sessionState.queue[0];
   const currentCard = cards.find((c) => c.id === currentCardId);
 
-  // Completion screen when queue is empty
-  if (!currentCard || sessionState.status === "mastered") {
+  // Completion screen when queue is empty or status is reached
+  if (!currentCard || sessionState.status === "mastered" || sessionState.status === "incomplete") {
     const accuracy =
       sessionState.totalCards > 0
         ? Math.round((sessionState.firstTryCorrectCount / sessionState.totalCards) * 100)
         : 100;
+    const isMastered = sessionState.status === "mastered";
 
     return (
       <div className="mx-auto max-w-xl px-4 py-12 text-center">
-        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-          <Trophy size={40} weight="fill" />
+        <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${
+          isMastered ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-700"
+        }`}>
+          {isMastered ? <Trophy size={40} weight="fill" /> : <ArrowCounterClockwise size={40} />}
         </div>
-        <h1 className="font-display mt-6 text-3xl font-bold">Deck Mastered!</h1>
+        <h1 className="font-display mt-6 text-3xl font-bold">
+          {isMastered ? "Deck Mastered!" : "Session Summary"}
+        </h1>
         <p className="mt-2 text-[var(--text-secondary)]">
-          You answered all {sessionState.totalCards} cards in &ldquo;{title}&rdquo;.
+          {isMastered
+            ? `You answered all ${sessionState.totalCards} cards in "${title}".`
+            : `Session ended as incomplete for "${title}". You can study again whenever you're ready.`}
         </p>
 
         <div className="mt-8 grid grid-cols-2 gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6">
@@ -168,15 +199,7 @@ export function FlashcardStudyView({
         </div>
 
         <div className="mt-8 flex justify-center gap-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setSessionState(initializeFlashcardSession(crypto.randomUUID(), cards));
-              setIsFlipped(false);
-              setLastGrade(null);
-              setFeedbackMessage(null);
-            }}
-          >
+          <Button variant="secondary" onClick={handleStudyAgain}>
             <ArrowCounterClockwise /> Study Again
           </Button>
           <Button asChild>
@@ -205,7 +228,7 @@ export function FlashcardStudyView({
     } else {
       setFeedbackMessage(
         result.threeMissesReached
-          ? "3 misses on this card. It has been moved back in the queue for focused practice."
+          ? "3 misses on this card."
           : "Not quite. This card will return later in your session."
       );
     }
@@ -221,6 +244,15 @@ export function FlashcardStudyView({
         ordinal,
       }),
     }).catch(() => {});
+
+    // If 3 misses reached, prompt user with choice modal
+    if (result.threeMissesReached) {
+      setTimeout(() => {
+        setThreeMissCard({ card: currentCard, nextState: result.nextState });
+        setSubmitting(false);
+      }, 800);
+      return;
+    }
 
     // Transition to next card after brief feedback
     setTimeout(() => {
@@ -317,11 +349,12 @@ export function FlashcardStudyView({
 
         {/* Typed Recall Input */}
         <form onSubmit={handleSubmitAnswer} className="mt-6">
-          <label className="block text-xs font-bold text-[var(--text-secondary)]">
+          <label htmlFor="flashcard-recall-input" className="block text-xs font-bold text-[var(--text-secondary)]">
             Type your recall response:
           </label>
           <div className="mt-2 flex gap-3">
             <input
+              id="flashcard-recall-input"
               ref={inputRef}
               type="text"
               value={typedAnswer}
@@ -360,6 +393,54 @@ export function FlashcardStudyView({
                   Expected: <strong className="font-bold">{currentCard.back}</strong>
                 </p>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* 3-Miss Choice Modal */}
+        {threeMissCard && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="three-miss-heading"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          >
+            <div className="surface-card w-full max-w-md p-6 shadow-xl text-center">
+              <h2 id="three-miss-heading" className="font-display text-xl font-bold">
+                Tough Card Detected
+              </h2>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                You have missed &ldquo;{threeMissCard.card.front}&rdquo; 3 times in this session.
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                Would you like to keep practicing or end this session as incomplete for now?
+              </p>
+              <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={() => {
+                    setSessionState(threeMissCard.nextState);
+                    setThreeMissCard(null);
+                    setTypedAnswer("");
+                    setIsFlipped(false);
+                    setLastGrade(null);
+                    setFeedbackMessage(null);
+                    setSubmitting(false);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  Continue studying
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setSessionState((prev) => (prev ? { ...prev, status: "incomplete" } : null));
+                    setThreeMissCard(null);
+                    setSubmitting(false);
+                  }}
+                >
+                  End session as incomplete
+                </Button>
+              </div>
             </div>
           </div>
         )}

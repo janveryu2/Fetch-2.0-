@@ -662,44 +662,24 @@ export interface RecordFlashcardAttemptParams {
 
 export async function recordFlashcardAttemptServer(
   params: RecordFlashcardAttemptParams
-): Promise<{ success: boolean; error: Error | null }> {
+): Promise<{ success: boolean; error: Error | null; data?: unknown }> {
   try {
-    // 1. Record attempt
-    const { error: attemptError } = await params.client
-      .from("flashcard_attempts")
-      .insert({
-        session_id: params.sessionId,
-        card_id: params.cardId,
-        owner_id: params.ownerId,
-        ordinal: params.ordinal,
-        submitted_answer: params.submittedAnswer,
-        is_correct: params.isCorrect,
-        retry_count: params.retryCount,
-      });
+    const { data, error } = await params.client.rpc("record_flashcard_attempt", {
+      p_session_id: params.sessionId,
+      p_card_id: params.cardId,
+      p_ordinal: params.ordinal,
+      p_submitted_answer: params.submittedAnswer,
+      p_is_correct: params.isCorrect,
+      p_retry_count: params.retryCount,
+      p_next_queue: params.sessionUpdate.queueState,
+      p_new_status: params.sessionUpdate.status,
+    });
 
-    if (attemptError) {
-      return { success: false, error: new Error(attemptError.message) };
+    if (error) {
+      return { success: false, error: new Error(error.message) };
     }
 
-    // 2. Update session state
-    const { error: sessionError } = await params.client
-      .from("flashcard_sessions")
-      .update({
-        status: params.sessionUpdate.status,
-        queue_state: params.sessionUpdate.queueState,
-        first_try_correct: params.sessionUpdate.firstTryCorrect,
-        cards_mastered: params.sessionUpdate.cardsMastered,
-        total_attempts: params.sessionUpdate.totalAttempts,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", params.sessionId)
-      .eq("owner_id", params.ownerId);
-
-    if (sessionError) {
-      return { success: false, error: new Error(sessionError.message) };
-    }
-
-    return { success: true, error: null };
+    return { success: true, error: null, data };
   } catch (err) {
     return {
       success: false,
@@ -707,5 +687,107 @@ export async function recordFlashcardAttemptServer(
     };
   }
 }
+
+export async function claimGenerationBatchServer(params: {
+  jobId: string;
+  batchNumber: number;
+  leaseOwner: string;
+  leaseSeconds?: number;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean; fencingToken?: number; leaseExpiresAt?: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("claim_generation_batch", {
+      p_job_id: params.jobId,
+      p_batch_number: params.batchNumber,
+      p_lease_owner: params.leaseOwner,
+      p_lease_seconds: params.leaseSeconds ?? 60,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { success: boolean; fencingToken?: number; leaseExpiresAt?: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to claim generation batch"),
+    };
+  }
+}
+
+export async function checkpointGenerationBatchServer(params: {
+  jobId: string;
+  batchNumber: number;
+  acceptedItems: unknown;
+  newAcceptedCount: number;
+  stage?: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("checkpoint_generation_batch", {
+      p_job_id: params.jobId,
+      p_batch_number: params.batchNumber,
+      p_accepted_items: params.acceptedItems,
+      p_new_accepted_count: params.newAcceptedCount,
+      p_stage: params.stage ?? "batching",
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { success: boolean }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to checkpoint generation batch"),
+    };
+  }
+}
+
+export async function getGenerationJobForRunnerServer(params: {
+  jobId: string;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { job: Record<string, unknown>; sourceContent: string; batches: unknown[] } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("get_generation_job_for_runner", {
+      p_job_id: params.jobId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { job: Record<string, unknown>; sourceContent: string; batches: unknown[] }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to get runner job data"),
+    };
+  }
+}
+
 
 

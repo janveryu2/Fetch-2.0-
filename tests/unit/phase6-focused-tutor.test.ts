@@ -98,8 +98,8 @@ Crossing over occurs during prophase I of meiosis.
         history: longHistory,
       });
 
-      for await (const _ of stream) {
-        // consume
+      for await (const chunk of stream) {
+        void chunk;
       }
 
       expect(mockFetch).toHaveBeenCalled();
@@ -135,8 +135,8 @@ Crossing over occurs during prophase I of meiosis.
         source: "--- Page 1 ---\nCell biology notes.",
       });
 
-      for await (const _ of stream) {
-        // consume
+      for await (const chunk of stream) {
+        void chunk;
       }
 
       expect(mockFetch).toHaveBeenCalled();

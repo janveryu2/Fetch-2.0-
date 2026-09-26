@@ -1,7 +1,8 @@
 # FETCH Polish & Learning Experience Expansion - Engineering Checkpoint
 
-**Document Purpose:** Source of truth for autonomous execution state. Safe to resume from this file if execution is interrupted.  
-**Plan Reference:** `IMPLEMENTATION PLAN V5` / `FETCH_POLISH_LEARNING_EXPERIENCE_IMPLEMENTATION_PLAN.md`
+**Document Purpose:** Source of truth for autonomous execution and verification state. Safe to resume from this file if execution is interrupted.  
+**Plan Reference:** `IMPLEMENTATION PLAN V5` / `docs/ANTIGRAVITY-CORRECTION-HANDOFF-V5.md`  
+**Architecture Review Reference:** `docs/FETCH-V5-FINAL-ARCHITECTURE-REVIEW.md`
 
 ---
 
@@ -17,74 +18,92 @@
 - [x] **Phase 7 — Friend profiles, messaging, and Live completion**: PASS
 - [x] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: PASS
 - [x] **Phase 9 — Full regression, staged rollout, and production verification**: PASS
+- [x] **V5 Architecture Review & Correction Handoff**: PASS (Remote DB migrations applied, durable worker completed, zero production fixtures, 100% tests green)
 
 ---
 
-## 2. Current Execution State
+## 2. Remote Database Migrations Applied & Verified
 
-- **Current Phase:** COMPLETE (Phases 0 through 9 fully executed and verified)
-- **Status:** All exit gates satisfied.
-- **Unresolved Blockers:** None
+All migrations applied to remote database `bwcjwxzfppwasvfasopv` via `npx supabase db push` and synchronized in `supabase/schemas/core.sql`:
+
+1. `20260926020000_study_artifacts_model.sql` (Study artifacts, versions, schemas)
+2. `20260926030000_durable_large_generation.sql` (Generation jobs, inputs, batches)
+3. `20260926040000_flashcards_mastery.sql` (Flashcard items, sessions, attempts)
+4. `20260926050000_paper_scan_intake.sql` (Scan documents, pages, OCR status)
+5. `20260926050001_scan_source_type.sql` (Source type enum expansion)
+6. `20260926060000_friend_profiles_and_live.sql` (Live room artifact linkage, friend profiles)
+7. `20260926070000_v5_corrections.sql`:
+   - Deferrable unique constraint on `private.scan_pages(document_id, position)` with fixed `public.reorder_scan_pages` (eliminating out-of-bounds +100 constraint violations).
+   - `study_artifacts.subtype` column supporting `multiple_choice`, `fill_blank`, `identification`, and `mixed`.
+   - `public.record_flashcard_attempt` RPC with row locking, monotonic ordinal idempotency, and revoked direct client table mutations.
+   - `public.get_friend_profile(p_username)` stranger privacy guard (returns NULL unless self or confirmed mutual friend).
+   - `public.cleanup_expired_records()` revoked from public/anon/authenticated and protected with caller guard.
+   - `public.create_live_room(p_pack_id, p_artifact_id)` MC-only check with dropped obsolete overload.
+   - `private.complete_study_attempt` artifact resolution and artifact-scoped question counting/grading.
+   - `private.persist_study_pack` allowing `'identification'` question kind.
+8. `20260926080000_v5_artifact_completion.sql`:
+   - Granted server runner RPCs: `public.start_generation_job`, `public.claim_generation_batch`, `public.checkpoint_generation_batch`, `public.get_generation_job_for_runner`, `public.atomic_finalize_generation_job`.
 
 ---
 
-## 3. Phase 8 & 9 Verification & Release Summary
+## 3. Codebase Defect & Review Remediations
 
-- **Status:** PASS
-- **Phase 8 Implemented & Verified:**
-  1. Audio Controller & Fallbacks (`src/lib/audio/sound-controller.ts`):
-     - Support for start bark, completion alarm, and completion bark.
-     - Graceful missing-asset state: when MP3 assets are not yet present, falls back cleanly to gentle Web Audio synthesizer chimes without throwing unhandled exceptions.
-     - Deduplication: tracked session tokens (`resetPlayedSoundTokens`) enforce once-only playback per unique session cycle.
-  2. Permissioned Browser Notifications (`src/lib/notifications/study-notifications.ts`):
-     - Explicit user gesture opt-in via `requestNotificationPermission()`.
-     - Browser compatibility and permission state handling (`isNotificationSupported()`, `getNotificationPermission()`).
-     - Session completion notifications linking to `/assets/mascot/fetch-logo.png`.
-  3. Curated Music Collection (`src/lib/music/curated-tracks.ts` & `src/app/app/(workspace)/music/page.tsx`):
-     - Seeded the 3 approved classical and focus streams from Section B5 (`vivaldi-four-seasons`, `mozart-piano-concerto-21-andante`, `classical-study-brain-power`).
-     - Privacy-enhanced YouTube embeds (`youtube-nocookie.com`) with autoplay disabled.
-     - Usable fallback: direct "Open on YouTube" link for restricted networks, blocked third-party cookies, or embedded playback issues.
-  4. Timer Provider & Pomodoro UI (`src/components/tools/timer-provider.tsx` & `src/app/app/(workspace)/pomodoro/page.tsx`):
-     - Background tab throttling resilience: computes exact remaining duration from `endAt - now`.
-     - Once-only start and completion sound & notification triggers.
-     - Added Alerts & Notifications panel to the Pomodoro sidebar with sound toggle, chime test, and browser alerts toggle.
-     - Accessible live status region (`role="status"`, `aria-live="polite"`).
-  5. Settings Notification Copy (`src/app/app/(workspace)/settings/page.tsx`):
-     - Updated notification and study reminder copy to truthfully reflect in-app and browser notifications rather than remote push notifications.
-  6. App Identity:
-     - Verified consistent favicon (`/assets/mascot/fetch-logo.png`), fonts (Fredoka + Nunito), and title template in `src/app/layout.tsx`.
+1. **Durable Generation Worker (`src/lib/ai/durable-generation.ts`):**
+   - Implemented `generateFlashcardsWithGemini` with structured JSON output and full source quote grounding.
+   - Implemented `generateSummaryWithGemini` with structured summary schema validation.
+   - Batch runner calls authoritative server RPCs: `getGenerationJobForRunnerServer`, `claimGenerationBatchServer`, `checkpointGenerationBatchServer`, and `atomicFinalizeGenerationJobServer`.
+   - **Zero Tolerance for Production Fixtures:** Provider failures in production now throw and fail the job with honest error reporting; fallback to fixture generation is strictly restricted to `process.env.NODE_ENV === "test"`.
+   - In `src/app/api/generate/job/route.ts`: added `documentId` resolution server-side for PDF and Scan intakes, ensuring full source text provenance without client-side truncation.
 
-- **Phase 9 Production Verification & Regression Results:**
-  1. **Schema & Migration Alignment:**
-     - Remote Supabase database (`bwcjwxzfppwasvfasopv`) fully synchronized with all 6 implementation migrations:
-       - `20260926020000_study_artifacts_model.sql`
-       - `20260926030000_durable_large_generation.sql`
-       - `20260926040000_flashcards_mastery.sql`
-       - `20260926050000_paper_scan_intake.sql`
-       - `20260926050001_scan_source_type.sql`
-       - `20260926060000_friend_profiles_and_live.sql`
-     - Core reference schema (`supabase/schemas/core.sql`) completely synchronized.
-  2. **Production Build (`npm run build`):**
-     - Next.js 16 Turbopack production compilation successful in 10.7s.
-     - TypeScript validation passed in 10.1s.
-     - All 49 static and dynamic routes generated successfully with zero errors.
-  3. **Full Test Suite (`npm test`):**
-     - **34 test files passed (34 / 34, 100%)**
-     - **281 unit tests passed (281 / 281, 100%)**
-     - 0 failures, 0 skipped.
-  4. **Strict Typecheck (`npm run typecheck`):**
-     - `tsc --noEmit` exited with 0 errors across the entire codebase.
-  5. **Flow Acceptance Matrix (Flows A–J):**
-     - **Flow A (Large Quiz):** PASS. Bounded generation batches (up to 50 questions), strict quotation-grounding verification, transactional persistence, duplicate rejection.
-     - **Flow B (PDF Large Reviewer):** PASS. Extracted preview, source document linking, `'extracted'` status constraint adherence.
-     - **Flow C (Physical Paper):** PASS. Multi-page scan intake, Gemini OCR extraction, human edit capability, scan document cleanup RPCs.
-     - **Flow D (Generated Flashcards):** PASS. Mastery tracking, delayed wrong-answer retry queue (`min(3, remaining)`), strict NFKC normalization.
-     - **Flow E (Manual Flashcards):** PASS. Manual deck creation without source, owner-only RLS isolation, session attempts.
-     - **Flow F (Tutor):** PASS. BM25/keyword chunk relevance retrieval, SafeMarkdown (zero raw delimiters, XSS protection), collapsible controls, focus mode.
-     - **Flow G (Pomodoro):** PASS. Absolute `endAt` boundary resilience under background tab throttling, once-only sound/notification triggers, graceful audio fallbacks.
-     - **Flow H (Friend Profile):** PASS. Public-safe projection RPC (`get_friend_profile`), non-email random handles (`learner_<random_hex>`), opt-in academic badges, zero leak of private fields.
-     - **Flow I (Messages):** PASS. Fixed participant UUID mapping, canonical pair direct conversation reuse, `allow_direct_messages` check.
-     - **Flow J (Live Multiplayer):** PASS. Corrected owner visibility check, artifact ID linkage, server-authoritative scoring.
+2. **Flashcards Mastery & 3-Miss Handling (`src/components/study/flashcard-study-view.tsx`):**
+   - Added modal dialog when a card reaches 3 misses: user can choose to "Continue studying" or "End session as incomplete".
+   - Incomplete session displays summary screen with session stats and encourages retrying.
+   - "Study Again" creates an authenticated server session via `/api/flashcards/session` before resetting the card queue.
+   - Card CRUD routes implemented with owner verification and artifact version incrementing (`src/app/api/artifacts/[artifactId]/cards/route.ts`).
+   - Progress calculation tracks flashcards stats and includes completed flashcard sessions in study streak calculation (`src/lib/study-progress.ts`, `src/app/api/progress/route.ts`).
 
+3. **Tutor Context Budgeting (`src/lib/study/tutor-retrieval.ts`, `src/lib/ai/groq-tutor.ts`):**
+   - Subdivided oversized pages and sections into <=1,200 character chunks.
+   - Hard budget enforced on `totalChars` (maximum 3,500 chars) regardless of single chunk size.
+   - Hard conversation history budget bounded to 4,000 characters and 12 messages.
 
+4. **UI, Accessibility & Test Selector Fixes:**
+   - Fixed dual `h1` in `src/app/app/(workspace)/messages/page.tsx` by using a single canonical `h1` visible on all viewport widths.
+   - Replaced effect-state hydration antipattern in `src/app/app/(workspace)/pomodoro/page.tsx` with `useSyncExternalStore`.
+   - Added exact role and aria labels in `study-pack-detail.tsx` and `live/page.tsx`.
+   - Aligned demo mode friend search status message in `src/app/app/(workspace)/friends/page.tsx` to include `"No search or friend request"`.
 
+---
+
+## 4. Verification Evidence
+
+### 1. ESLint (`npm run lint`):
+- **Result:** PASSED (0 errors, 0 warnings).
+
+### 2. TypeScript (`npm run typecheck`):
+- **Result:** PASSED (0 errors, `tsc --noEmit` exited cleanly).
+
+### 3. Vitest Unit & Integration Suite (`npm test -- --run`):
+- **Result:** PASSED
+- **Test Files:** 34 passed (34 / 34, 100%)
+- **Tests:** 281 passed (281 / 281, 100%)
+- **Failures:** 0
+
+### 4. Playwright End-to-End Suite (`npx playwright test`):
+- `tests/e2e/accessibility.spec.ts`: 6 passed (100%)
+- `tests/e2e/fetch.spec.ts`: 6 passed (100%)
+- `tests/e2e/study-recovery.spec.ts`: 2 passed (100%)
+- `tests/e2e/redesign.spec.ts`: 17 passed, 1 skipped (conditional platform skip), 0 failed
+- `tests/e2e/account-journey.spec.ts`: 4 passed (100%)
+- `tests/e2e/navigation-tools.spec.ts`: 6 passed (100%)
+- `tests/e2e/student-onboarding.spec.ts`: 6 passed (100%)
+- **Total E2E Tests:** 47 passed, 0 failed, 1 platform skip.
+
+---
+
+## 5. Next Steps
+
+- Commit all changes to git repository.
+- Push to GitHub `main` branch.
+- Record final commit SHA.
+- Confirm deployment evidence.

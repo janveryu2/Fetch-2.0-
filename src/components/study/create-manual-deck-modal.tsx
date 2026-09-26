@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash, X, NotePencil, Sparkle } from "@phosphor-icons/react";
+import { Plus, Trash, X, NotePencil } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 
 interface CardEntry {
@@ -19,6 +19,7 @@ export function CreateManualDeckModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState("Custom Vocabulary");
   const [cards, setCards] = useState<CardEntry[]>([
     { front: "", back: "", aliases: "" },
@@ -26,6 +27,17 @@ export function CreateManualDeckModal({
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -98,15 +110,22 @@ export function CreateManualDeckModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[var(--surface-card)] p-6 shadow-2xl border border-[var(--border-subtle)]">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-deck-title"
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[var(--surface-card)] p-6 shadow-2xl border border-[var(--border-subtle)]"
+      >
         <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
           <div className="flex items-center gap-2">
             <NotePencil size={22} className="text-[var(--fetch-blue-600)]" />
-            <h2 className="font-display text-xl font-bold">Create Manual Flashcard Deck</h2>
+            <h2 id="create-deck-title" className="font-display text-xl font-bold">Create Manual Flashcard Deck</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close dialog"
             className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
           >
             <X size={20} />
@@ -115,8 +134,9 @@ export function CreateManualDeckModal({
 
         <form onSubmit={handleCreateDeck} className="mt-5 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-[var(--text-secondary)]">Deck Title</label>
+            <label htmlFor="deck-title-input" className="block text-xs font-bold text-[var(--text-secondary)]">Deck Title</label>
             <input
+              id="deck-title-input"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}

@@ -9,7 +9,8 @@ export const maxDuration = 60;
 
 export const jobRequestSchema = z.object({
   title: z.string().trim().min(2).max(120),
-  source: z.string().trim().min(80).max(80_000),
+  source: z.string().trim().max(80_000).optional().default(""),
+  documentId: z.string().uuid().optional(),
   count: z.number().int().min(3).max(50).default(10),
   artifactKind: z.enum(["quiz", "flashcards", "summary"]).default("quiz"),
   sourceType: z.enum(["text", "pdf", "url", "manual", "scan"]).default("text"),
@@ -36,12 +37,50 @@ export async function POST(request: Request) {
     );
   }
 
+  let resolvedSource = parsed.data.source;
+  let resolvedLabel = parsed.data.sourceLabel;
+
+  if (parsed.data.documentId) {
+    if (parsed.data.sourceType === "pdf") {
+      const { data: docData } = await account.supabase.rpc("get_source_document", {
+        p_doc_id: parsed.data.documentId,
+      });
+      const typedDoc = docData as { extractedText?: string; fileName?: string } | null;
+      if (typedDoc?.extractedText) {
+        resolvedSource = typedDoc.extractedText;
+        resolvedLabel = typedDoc.fileName || resolvedLabel;
+      }
+    } else if (parsed.data.sourceType === "scan") {
+      const { data: docData } = await account.supabase.rpc("get_scan_document", {
+        p_document_id: parsed.data.documentId,
+      });
+      const typedScan = docData as { title?: string; pages?: Array<{ extractedText?: string }> } | null;
+      if (typedScan?.pages) {
+        const texts = typedScan.pages.map((p) => p.extractedText).filter(Boolean);
+        if (texts.length > 0) {
+          resolvedSource = texts.join("\n\n");
+        }
+        resolvedLabel = typedScan.title || resolvedLabel;
+      }
+    }
+  }
+
+  if (resolvedSource.length < 80) {
+    return createApiErrorResponse(
+      "INVALID_REQUEST",
+      "Add a title and at least 80 characters of study material.",
+      400
+    );
+  }
+
+  resolvedSource = resolvedSource.slice(0, 80_000);
+
   const requestId = parsed.data.requestId || crypto.randomUUID();
   const payloadHash = createHash("sha256")
     .update(
       JSON.stringify({
         title: parsed.data.title,
-        source: parsed.data.source,
+        source: resolvedSource,
         count: parsed.data.count,
         artifactKind: parsed.data.artifactKind,
       })
@@ -56,8 +95,8 @@ export async function POST(request: Request) {
     artifactKind: parsed.data.artifactKind,
     title: parsed.data.title,
     sourceType: parsed.data.sourceType,
-    sourceLabel: parsed.data.sourceLabel,
-    sourceContent: parsed.data.source,
+    sourceLabel: resolvedLabel,
+    sourceContent: resolvedSource,
     requestedCount: parsed.data.count,
     fallbackClient: account.supabase,
   });

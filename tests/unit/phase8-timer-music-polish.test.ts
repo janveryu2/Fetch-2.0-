@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
-  CURATED_TRACKS,
   getCuratedTracks,
   findCuratedTrackById,
 } from "@/lib/music/curated-tracks";
@@ -65,7 +64,7 @@ describe("Phase 8: Audio Controller and Graceful Missing-Asset State", () => {
 
   it("enforces once-only sound playback per unique session token", async () => {
     // In Node/Vitest test environment, playStudySound gracefully handles missing Audio/WebAudio
-    const firstCall = await playStudySound("start-bark", "token-101", {
+    await playStudySound("start-bark", "token-101", {
       soundEnabled: true,
     });
     // First call may return true (if mock/synth executed) or false if window undefined

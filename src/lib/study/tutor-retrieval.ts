@@ -50,7 +50,21 @@ export function chunkSourceDocument(sourceText: string): Array<{ label: string; 
       const current = pageIndices[i];
       const nextIndex = i + 1 < pageIndices.length ? pageIndices[i + 1].index : sourceText.length;
       const content = sourceText.slice(current.index, nextIndex).trim();
-      if (content.length > 0) {
+      if (content.length > 1200) {
+        let offset = 0;
+        let part = 1;
+        while (offset < content.length) {
+          const slice = content.slice(offset, offset + 1200).trim();
+          if (slice.length > 0) {
+            rawChunks.push({
+              label: `Page ${current.pageNumber} (Part ${part})`,
+              content: slice,
+            });
+            part++;
+          }
+          offset += 1200;
+        }
+      } else if (content.length > 0) {
         rawChunks.push({
           label: `Page ${current.pageNumber}`,
           content,
@@ -74,6 +88,27 @@ export function chunkSourceDocument(sourceText: string): Array<{ label: string; 
           buffer = "";
         }
         currentLabel = headingMatch[1].slice(0, 40);
+      }
+
+      if (trimmed.length > 1200) {
+        if (buffer.trim()) {
+          rawChunks.push({ label: currentLabel, content: buffer.trim() });
+          buffer = "";
+        }
+        let offset = 0;
+        let part = 1;
+        while (offset < trimmed.length) {
+          const slice = trimmed.slice(offset, offset + 1200).trim();
+          if (slice.length > 0) {
+            rawChunks.push({
+              label: `${currentLabel} (Part ${part})`,
+              content: slice,
+            });
+            part++;
+          }
+          offset += 1200;
+        }
+        continue;
       }
 
       if (buffer.length + trimmed.length > 1200) {
@@ -150,14 +185,22 @@ export function retrieveRelevantChunks(
 
   for (const item of scored) {
     if (selected.length >= maxChunks) break;
-    if (totalChars + item.content.length > maxTotalChars && selected.length > 0) continue;
+    const remainingBudget = maxTotalChars - totalChars;
+    if (remainingBudget <= 0) break;
 
-    selected.push({
-      label: item.label,
-      content: item.content,
-      score: item.score,
-    });
-    totalChars += item.content.length;
+    let contentToInclude = item.content;
+    if (contentToInclude.length > remainingBudget) {
+      contentToInclude = contentToInclude.slice(0, remainingBudget).trim();
+    }
+
+    if (contentToInclude.length > 0) {
+      selected.push({
+        label: item.label,
+        content: contentToInclude,
+        score: item.score,
+      });
+      totalChars += contentToInclude.length;
+    }
   }
 
   const formattedContext = selected

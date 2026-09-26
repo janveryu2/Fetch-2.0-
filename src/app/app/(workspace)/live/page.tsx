@@ -600,7 +600,7 @@ export default function LivePage() {
               e.preventDefault();
               setStatus(
                 code === createdLocal && createdLocal
-                  ? "Local preview code matched. Sign in for live multiplayer."
+                  ? "Local preview code matched. Sign in for live multiplayer (No multiplayer connection in demo)."
                   : "Code not found in local preview."
               );
             }}>
@@ -624,6 +624,7 @@ export default function LivePage() {
               <Button
                 className="mt-5"
                 type="submit"
+                aria-label="Check room code"
                 disabled={code.length !== 6 || loading}
               >
                 <SignIn />

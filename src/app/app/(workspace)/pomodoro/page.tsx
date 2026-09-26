@@ -16,11 +16,10 @@ import { useTimer } from "@/components/tools/timer-provider";
 import { useDemo } from "@/components/app/demo-provider";
 import { timerText, type TimerMode } from "@/lib/focus-timer";
 import {
-  isNotificationSupported,
   getNotificationPermission,
 } from "@/lib/notifications/study-notifications";
 import { playStudySound } from "@/lib/audio/sound-controller";
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 export default function PomodoroPage() {
   const {
@@ -37,11 +36,13 @@ export default function PomodoroPage() {
     resetTimer,
   } = useTimer();
   const { packs } = useDemo();
-  const [notifPermission, setNotifPermission] = useState<string>("default");
-
-  useEffect(() => {
-    setNotifPermission(getNotificationPermission());
-  }, []);
+  const [overridePermission, setOverridePermission] = useState<string | null>(null);
+  const clientPermission = useSyncExternalStore(
+    () => () => {},
+    getNotificationPermission,
+    () => "default"
+  );
+  const notifPermission = overridePermission ?? clientPermission;
   return (
     <div className="workspace">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -249,7 +250,7 @@ export default function PomodoroPage() {
                     onChange={async (e) => {
                       if (e.target.checked) {
                         const granted = await requestNotifications();
-                        setNotifPermission(getNotificationPermission());
+                        setOverridePermission(getNotificationPermission());
                         if (!granted) {
                           setNotificationsEnabled(false);
                         }

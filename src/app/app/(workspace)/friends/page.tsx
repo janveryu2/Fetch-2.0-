@@ -103,7 +103,7 @@ export default function FriendsPage() {
 
     if (mode !== "account") {
       setStatus(
-        "Friend discovery is an interface preview in demo mode. Sign in to search for study buddies."
+        "Friend discovery is an interface preview in demo mode. No search or friend request was sent. Sign in to search for study buddies."
       );
       return;
     }
