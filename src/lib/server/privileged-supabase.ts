@@ -480,6 +480,7 @@ export async function atomicFinalizeGenerationJobServer(params: {
   jobId: string;
   questions?: unknown[];
   summary?: unknown;
+  flashcards?: unknown[];
   fallbackClient?: SupabaseClient;
 }): Promise<{ data: { status: string; packId?: string; artifactId?: string } | null; error: Error | null }> {
   const privilegedClient = getPrivilegedSupabaseClient();
@@ -494,6 +495,7 @@ export async function atomicFinalizeGenerationJobServer(params: {
       p_job_id: params.jobId,
       p_questions: params.questions || [],
       p_summary: params.summary || null,
+      p_flashcards: params.flashcards || [],
     });
 
     if (error) {
@@ -533,4 +535,177 @@ export async function getStudySummaryServer(params: {
     };
   }
 }
+
+export interface CreateManualDeckParams {
+  title: string;
+  cards?: Array<{
+    front: string;
+    back: string;
+    aliases?: string[];
+  }>;
+  client: SupabaseClient;
+}
+
+export async function createManualDeckServer(
+  params: CreateManualDeckParams
+): Promise<{ data: { packId: string; artifactId: string; cardCount: number } | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("create_manual_deck", {
+      p_title: params.title,
+      p_cards: params.cards || [],
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return {
+      data: data as { packId: string; artifactId: string; cardCount: number },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to create manual deck"),
+    };
+  }
+}
+
+export interface ListFlashcardsResult {
+  artifactId: string;
+  version: number;
+  cards: Array<{
+    id: string;
+    position: number;
+    front: string;
+    back: string;
+    aliases: string[];
+    origin: string;
+    sourceQuote?: string;
+    version: number;
+  }>;
+}
+
+export async function listFlashcardsServer(params: {
+  artifactId: string;
+  client: SupabaseClient;
+}): Promise<{ data: ListFlashcardsResult | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("list_flashcards", {
+      p_artifact_id: params.artifactId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as ListFlashcardsResult, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to list flashcards"),
+    };
+  }
+}
+
+export interface StartFlashcardSessionResult {
+  sessionId: string;
+  status: "active" | "incomplete" | "mastered";
+  queueState: string[];
+  firstTryCorrect: number;
+  cardsMastered: number;
+  totalAttempts: number;
+  reused: boolean;
+}
+
+export async function startFlashcardSessionServer(params: {
+  artifactId: string;
+  clientSessionId: string;
+  client: SupabaseClient;
+}): Promise<{ data: StartFlashcardSessionResult | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("start_flashcard_session", {
+      p_artifact_id: params.artifactId,
+      p_client_session_id: params.clientSessionId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as StartFlashcardSessionResult, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to start flashcard session"),
+    };
+  }
+}
+
+export interface RecordFlashcardAttemptParams {
+  sessionId: string;
+  cardId: string;
+  ownerId: string;
+  ordinal: number;
+  submittedAnswer: string;
+  isCorrect: boolean;
+  retryCount: number;
+  sessionUpdate: {
+    status: "active" | "incomplete" | "mastered";
+    queueState: string[];
+    firstTryCorrect: number;
+    cardsMastered: number;
+    totalAttempts: number;
+  };
+  client: SupabaseClient;
+}
+
+export async function recordFlashcardAttemptServer(
+  params: RecordFlashcardAttemptParams
+): Promise<{ success: boolean; error: Error | null }> {
+  try {
+    // 1. Record attempt
+    const { error: attemptError } = await params.client
+      .from("flashcard_attempts")
+      .insert({
+        session_id: params.sessionId,
+        card_id: params.cardId,
+        owner_id: params.ownerId,
+        ordinal: params.ordinal,
+        submitted_answer: params.submittedAnswer,
+        is_correct: params.isCorrect,
+        retry_count: params.retryCount,
+      });
+
+    if (attemptError) {
+      return { success: false, error: new Error(attemptError.message) };
+    }
+
+    // 2. Update session state
+    const { error: sessionError } = await params.client
+      .from("flashcard_sessions")
+      .update({
+        status: params.sessionUpdate.status,
+        queue_state: params.sessionUpdate.queueState,
+        first_try_correct: params.sessionUpdate.firstTryCorrect,
+        cards_mastered: params.sessionUpdate.cardsMastered,
+        total_attempts: params.sessionUpdate.totalAttempts,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", params.sessionId)
+      .eq("owner_id", params.ownerId);
+
+    if (sessionError) {
+      return { success: false, error: new Error(sessionError.message) };
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err : new Error("Failed to record flashcard attempt"),
+    };
+  }
+}
+
 

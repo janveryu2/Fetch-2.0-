@@ -7,6 +7,7 @@ import {
   Eye,
   EyeSlash,
   GameController,
+  NotePencil,
   Sparkle,
   Stack,
 } from "@phosphor-icons/react";
@@ -22,7 +23,8 @@ export function StudyPackDetail({ packId }: { packId: string }) {
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [hasActiveDraft, setHasActiveDraft] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: string; kind: string; title: string }>>([]);
-  const [activeTab, setActiveTab] = useState<"quiz" | "summary">("quiz");
+  const [activeTab, setActiveTab] = useState<"quiz" | "summary" | "flashcards">("quiz");
+  const [deckCards, setDeckCards] = useState<Array<{ id: string; front: string; back: string }>>([]);
 
   const lastAttempt = attempts.find((item) => item.packId === packId);
   const pack = packs.find((item) => item.id === packId);
@@ -34,9 +36,22 @@ export function StudyPackDetail({ packId }: { packId: string }) {
         .then((data) => {
           if (data?.artifacts) {
             setArtifacts(data.artifacts);
-            const hasSummary = data.artifacts.some((a: { kind: string }) => a.kind === "summary");
+            const flashcardArt = data.artifacts.find((a: { kind: string }) => a.kind === "flashcards");
+            const summaryArt = data.artifacts.find((a: { kind: string }) => a.kind === "summary");
             const hasQuiz = data.artifacts.some((a: { kind: string }) => a.kind === "quiz");
-            if (hasSummary && (!hasQuiz || (pack && pack.questions.length === 0))) {
+
+            if (flashcardArt) {
+              fetch(`/api/artifacts/${flashcardArt.id}/cards`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((cardData) => {
+                  if (cardData?.cards) setDeckCards(cardData.cards);
+                })
+                .catch(() => {});
+            }
+
+            if (flashcardArt && (!hasQuiz || (pack && pack.questions.length === 0))) {
+              setActiveTab("flashcards");
+            } else if (summaryArt && (!hasQuiz || (pack && pack.questions.length === 0))) {
               setActiveTab("summary");
             }
           }
@@ -116,15 +131,26 @@ export function StudyPackDetail({ packId }: { packId: string }) {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button asChild size="lg">
-            <Link href={`/app/study/${pack.id}`}>
-              <GameController size={22} weight="fill" /> {hasActiveDraft ? "Study" : "Study"}
-            </Link>
-          </Button>
+          {pack.questions.length > 0 && (
+            <Button asChild size="lg">
+              <Link href={`/app/study/${pack.id}`}>
+                <GameController size={22} weight="fill" /> {hasActiveDraft ? "Resume Quiz" : "Study Quiz"}
+              </Link>
+            </Button>
+          )}
+          {artifacts.find((a) => a.kind === "flashcards") && (
+            <Button asChild size="lg" variant={pack.questions.length > 0 ? "secondary" : "primary"}>
+              <Link
+                href={`/app/study-flashcards/${artifacts.find((a) => a.kind === "flashcards")!.id}?packId=${pack.id}&title=${encodeURIComponent(pack.title)}`}
+              >
+                <NotePencil size={22} /> Study Flashcards
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      {artifacts.some((a) => a.kind === "summary") && (
+      {artifacts.length > 0 && (
         <div className="mt-6 flex gap-2 border-b border-[var(--border-subtle)] pb-2">
           {pack.questions.length > 0 && (
             <button
@@ -138,16 +164,30 @@ export function StudyPackDetail({ packId }: { packId: string }) {
               Practice Quiz ({pack.questions.length})
             </button>
           )}
-          <button
-            onClick={() => setActiveTab("summary")}
-            className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer ${
-              activeTab === "summary"
-                ? "bg-[var(--fetch-blue-600)] text-white"
-                : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
-            }`}
-          >
-            Study Summary
-          </button>
+          {artifacts.some((a) => a.kind === "flashcards") && (
+            <button
+              onClick={() => setActiveTab("flashcards")}
+              className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer ${
+                activeTab === "flashcards"
+                  ? "bg-[var(--fetch-blue-600)] text-white"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
+              }`}
+            >
+              Flashcards ({deckCards.length})
+            </button>
+          )}
+          {artifacts.some((a) => a.kind === "summary") && (
+            <button
+              onClick={() => setActiveTab("summary")}
+              className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer ${
+                activeTab === "summary"
+                  ? "bg-[var(--fetch-blue-600)] text-white"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
+              }`}
+            >
+              Study Summary
+            </button>
+          )}
         </div>
       )}
 
@@ -155,6 +195,40 @@ export function StudyPackDetail({ packId }: { packId: string }) {
         {activeTab === "summary" && artifacts.find((a) => a.kind === "summary") ? (
           <section className="space-y-4">
             <SummaryViewer artifactId={artifacts.find((a) => a.kind === "summary")!.id} />
+          </section>
+        ) : activeTab === "flashcards" && artifacts.find((a) => a.kind === "flashcards") ? (
+          <section className="surface-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display text-2xl font-semibold">Flashcards</h2>
+                <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                  Flip cards with typed recall and mastery tracking.
+                </p>
+              </div>
+              <Button asChild size="sm">
+                <Link
+                  href={`/app/study-flashcards/${artifacts.find((a) => a.kind === "flashcards")!.id}?packId=${pack.id}&title=${encodeURIComponent(pack.title)}`}
+                >
+                  <NotePencil size={16} className="mr-1" /> Start Practice
+                </Link>
+              </Button>
+            </div>
+
+            <div className="mt-5 divide-y divide-[var(--border-subtle)]">
+              {deckCards.map((card, index) => (
+                <article key={card.id} className="grid gap-3 py-4 sm:grid-cols-[40px_1fr]">
+                  <span className="font-display text-lg font-semibold text-[var(--fetch-blue-600)]">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm">{card.front}</h3>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                      Answer: <strong className="font-bold text-[var(--fetch-blue-700)]">{card.back}</strong>
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
           </section>
         ) : (
           <section className="surface-card p-6">

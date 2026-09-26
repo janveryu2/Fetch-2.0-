@@ -3600,3 +3600,105 @@ $$;
 revoke all on function public.get_study_summary(uuid) from public, anon;
 grant execute on function public.get_study_summary(uuid) to authenticated, service_role;
 
+-- =========================================================================
+-- Phase 4: Flashcards & Study Mastery
+-- =========================================================================
+
+create table if not exists public.flashcards (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  artifact_id uuid not null references public.study_artifacts(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  position integer not null check (position >= 0),
+  front text not null check (char_length(pg_catalog.btrim(front)) >= 1),
+  back text not null check (char_length(pg_catalog.btrim(back)) >= 1),
+  aliases text[] not null default '{}'::text[],
+  origin text not null default 'generated' check (origin in ('generated', 'manual')),
+  source_quote text default null,
+  source_chunk_ref text default null,
+  version integer not null default 1 check (version > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (artifact_id, position)
+);
+
+create index if not exists idx_flashcards_artifact
+  on public.flashcards(artifact_id, position);
+
+create index if not exists idx_flashcards_owner
+  on public.flashcards(owner_id);
+
+alter table public.flashcards enable row level security;
+
+create policy flashcards_owner_all
+  on public.flashcards
+  for all
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+grant select, insert, update, delete on public.flashcards to authenticated;
+grant select, insert, update, delete on public.flashcards to service_role;
+
+create table if not exists public.flashcard_sessions (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  artifact_id uuid not null references public.study_artifacts(id) on delete cascade,
+  artifact_version integer not null default 1 check (artifact_version > 0),
+  status text not null default 'active' check (status in ('active', 'incomplete', 'mastered')),
+  client_session_id uuid not null,
+  queue_state jsonb not null default '[]'::jsonb,
+  first_try_correct integer not null default 0 check (first_try_correct >= 0),
+  total_attempts integer not null default 0 check (total_attempts >= 0),
+  cards_mastered integer not null default 0 check (cards_mastered >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (owner_id, client_session_id)
+);
+
+create index if not exists idx_flashcard_sessions_owner_updated
+  on public.flashcard_sessions(owner_id, updated_at desc);
+
+create index if not exists idx_flashcard_sessions_artifact
+  on public.flashcard_sessions(artifact_id);
+
+alter table public.flashcard_sessions enable row level security;
+
+create policy flashcard_sessions_owner_all
+  on public.flashcard_sessions
+  for all
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+grant select, insert, update, delete on public.flashcard_sessions to authenticated;
+grant select, insert, update, delete on public.flashcard_sessions to service_role;
+
+create table if not exists public.flashcard_attempts (
+  id uuid primary key default pg_catalog.gen_random_uuid(),
+  session_id uuid not null references public.flashcard_sessions(id) on delete cascade,
+  card_id uuid not null references public.flashcards(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  ordinal integer not null check (ordinal >= 0),
+  submitted_answer text not null,
+  is_correct boolean not null,
+  retry_count integer not null default 0 check (retry_count >= 0),
+  created_at timestamptz not null default now(),
+  unique (session_id, ordinal)
+);
+
+create index if not exists idx_flashcard_attempts_session
+  on public.flashcard_attempts(session_id, ordinal);
+
+create index if not exists idx_flashcard_attempts_owner
+  on public.flashcard_attempts(owner_id);
+
+alter table public.flashcard_attempts enable row level security;
+
+create policy flashcard_attempts_owner_all
+  on public.flashcard_attempts
+  for all
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+grant select, insert, update, delete on public.flashcard_attempts to authenticated;
+grant select, insert, update, delete on public.flashcard_attempts to service_role;
+
+

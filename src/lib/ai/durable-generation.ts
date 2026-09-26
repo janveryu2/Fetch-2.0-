@@ -194,6 +194,52 @@ export function createFixtureBatchQuestions(
   return questions;
 }
 
+export interface GeneratedFlashcard {
+  front: string;
+  back: string;
+  aliases: string[];
+  sourceQuote: string;
+}
+
+/**
+ * Creates deterministic development fixture flashcards for tests / dev mode
+ */
+export function createFixtureBatchFlashcards(
+  source: string,
+  count: number,
+  batchIndex: number
+): GeneratedFlashcard[] {
+  const cleaned = source.replace(/\s+/g, " ").trim();
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter((s) => s.length > 25);
+  const pool = sentences.length > 0 ? sentences : [cleaned];
+
+  const cards: GeneratedFlashcard[] = [];
+  const offset = batchIndex * 10;
+
+  for (let i = 0; i < count; i++) {
+    const sentenceIndex = (offset + i) % pool.length;
+    const sentence = pool[sentenceIndex];
+    const words = sentence
+      .replace(/[^a-zA-Z0-9\s-]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length > 4);
+    const answer = words[i % Math.max(1, words.length)] || "concept";
+    const front = `What term or concept completes: "${sentence.replace(
+      new RegExp(`\\b${answer}\\b`, "i"),
+      "____"
+    )}"?`;
+
+    cards.push({
+      front,
+      back: answer,
+      aliases: [answer.toLowerCase()],
+      sourceQuote: sentence,
+    });
+  }
+
+  return cards;
+}
+
 /**
  * Creates deterministic development fixture summary
  */
@@ -314,6 +360,52 @@ export async function runGenerationJob(jobId: string): Promise<{
 
       if (finalizeResult.error || !finalizeResult.data) {
         throw new Error(finalizeResult.error?.message || "Failed to finalize summary job");
+      }
+
+      return {
+        success: true,
+        packId: finalizeResult.data.packId,
+        artifactId: finalizeResult.data.artifactId,
+      };
+    }
+
+    if (job.artifact_kind === "flashcards") {
+      // Flashcard generation
+      const batches = planBatches(job.requested_count, sourceContent);
+      const collectedCards: Array<{
+        front: string;
+        back: string;
+        aliases: string[];
+        sourceQuote: string;
+      }> = [];
+
+      await privilegedClient
+        .from("generation_jobs")
+        .update({ stage: "batching", updated_at: new Date().toISOString() })
+        .eq("id", jobId);
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const cards = createFixtureBatchFlashcards(batch.sourceChunk, batch.allocatedCount, i);
+        collectedCards.push(...cards);
+
+        await privilegedClient
+          .from("generation_jobs")
+          .update({
+            accepted_count: collectedCards.length,
+            stage: i === batches.length - 1 ? "finalizing" : "batching",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", jobId);
+      }
+
+      const finalizeResult = await atomicFinalizeGenerationJobServer({
+        jobId,
+        flashcards: collectedCards,
+      });
+
+      if (finalizeResult.error || !finalizeResult.data) {
+        throw new Error(finalizeResult.error?.message || "Failed to finalize flashcard job");
       }
 
       return {

@@ -23,6 +23,7 @@ import {
   createInitialRequestState,
   type RequestState,
 } from "@/lib/study/request-lifecycle";
+import { CreateManualDeckModal } from "@/components/study/create-manual-deck-modal";
 
 export function CreatePackPanel() {
   const router = useRouter();
@@ -46,6 +47,7 @@ export function CreatePackPanel() {
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [outputKind, setOutputKind] = useState<"quiz" | "flashcards" | "summary">("quiz");
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [requestState, setRequestState] = useState<RequestState>(createInitialRequestState);
   const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
   const [jobProgress, setJobProgress] = useState<{
@@ -196,11 +198,6 @@ export function CreatePackPanel() {
   async function generate() {
     setError("");
     setWarning("");
-
-    if (outputKind === "flashcards") {
-      setError("Flashcards generation will be available in Phase 4. Please select Practice Quiz or Study Summary for now.");
-      return;
-    }
 
     if (mode === "account") {
       if (tab === "pdf" && !pdfDoc) {
@@ -664,10 +661,10 @@ export function CreatePackPanel() {
               {
                 id: "flashcards" as const,
                 label: "Flashcards",
-                badge: "Phase 4",
+                badge: "Active",
                 desc: "Flip cards with typed recall, delayed retry & mastery tracking.",
                 icon: NotePencil,
-                active: false,
+                active: true,
               },
               {
                 id: "summary" as const,
@@ -685,13 +682,7 @@ export function CreatePackPanel() {
                 aria-checked={outputKind === id}
                 onClick={() => {
                   setOutputKind(id);
-                  if (!active) {
-                    setWarning(
-                      "Flashcards study loop is launching in Phase 4. Select Practice Quiz or Study Summary to generate now."
-                    );
-                  } else {
-                    setWarning("");
-                  }
+                  setWarning("");
                 }}
                 className={cn(
                   "flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer",
@@ -758,6 +749,53 @@ export function CreatePackPanel() {
                 </>
               )}
             </Button>
+          </div>
+        )}
+
+        {outputKind === "flashcards" && (
+          <div className="mt-5 space-y-4">
+            <div className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
+              <label className="block font-extrabold">
+                Flashcards to generate
+                <input
+                  type="range"
+                  min="3"
+                  max="50"
+                  value={count}
+                  onChange={(event) => setCount(Number(event.target.value))}
+                  className="mt-3 w-full accent-[var(--fetch-blue-600)]"
+                />
+                <span className="mt-1 block text-sm text-[var(--text-secondary)]">
+                  Up to {count} flashcards (based on material coverage)
+                </span>
+              </label>
+              <Button
+                onClick={generate}
+                disabled={isGenerateDisabled}
+                className="sm:min-w-48"
+              >
+                {loading ? (
+                  "Generating cards..."
+                ) : (
+                  <>
+                    <Sparkle size={20} weight="fill" /> Generate Flashcards
+                  </>
+                )}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3">
+              <span className="text-xs text-[var(--text-secondary)]">
+                Want to build your own deck without an uploaded source?
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsManualModalOpen(true)}
+              >
+                <NotePencil size={15} className="mr-1" /> Create Manual Deck
+              </Button>
+            </div>
           </div>
         )}
 
@@ -838,6 +876,11 @@ export function CreatePackPanel() {
           </div>
         )}
       </div>
+
+      <CreateManualDeckModal
+        isOpen={isManualModalOpen}
+        onClose={() => setIsManualModalOpen(false)}
+      />
     </section>
   );
 }
