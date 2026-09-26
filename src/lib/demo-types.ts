@@ -13,6 +13,23 @@ export type StudyQuestion = Omit<Question, "answer" | "explanation"> & {
   explanation?: string;
 };
 
+export type ArtifactKind = "quiz" | "flashcards" | "summary";
+export type ArtifactOrigin = "generated" | "manual";
+export type ArtifactStatus = "processing" | "ready" | "failed";
+
+export type StudyArtifact = {
+  id: string;
+  packId: string;
+  ownerId?: string;
+  kind: ArtifactKind;
+  origin: ArtifactOrigin;
+  status: ArtifactStatus;
+  title: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StudyPack = {
   id: string;
   title: string;
@@ -20,6 +37,7 @@ export type StudyPack = {
   createdAt: string;
   questions: StudyQuestion[];
   progress: number;
+  artifacts?: StudyArtifact[];
 };
 
 export type StudyAttempt = {

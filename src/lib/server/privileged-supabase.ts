@@ -41,6 +41,8 @@ export interface PersistStudyPackParams {
 
 export interface PersistStudyPackResult {
   id: string;
+  packId?: string;
+  artifactId?: string;
   questions: Question[];
 }
 
@@ -88,7 +90,7 @@ export async function persistStudyPackServer(
       return { data: null, error: new Error(error.message) };
     }
 
-    const saved = data as { id?: unknown; questions?: unknown };
+    const saved = data as { id?: unknown; packId?: unknown; artifactId?: unknown; questions?: unknown };
     if (!saved || typeof saved.id !== "string" || !Array.isArray(saved.questions)) {
       return { data: null, error: new Error("Invalid persistence response shape") };
     }
@@ -96,6 +98,8 @@ export async function persistStudyPackServer(
     return {
       data: {
         id: saved.id,
+        packId: typeof saved.packId === "string" ? saved.packId : saved.id,
+        artifactId: typeof saved.artifactId === "string" ? saved.artifactId : saved.id,
         questions: saved.questions as Question[],
       },
       error: null,

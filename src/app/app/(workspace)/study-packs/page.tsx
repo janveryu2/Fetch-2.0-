@@ -183,9 +183,16 @@ function StudyPacksContent() {
                   <p className="mt-2 text-xs text-[var(--text-tertiary)]">
                     {p.sourceLabel}
                   </p>
-                  <div className="mt-5 flex gap-3 border-t border-[var(--border-subtle)] pt-4">
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-md bg-[var(--fetch-blue-50)] text-[var(--fetch-blue-700)] border border-[var(--fetch-blue-200)]">
+                      <span>Quiz</span>
+                      <span className="text-[var(--text-tertiary)]">·</span>
+                      <span>{p.questions.length} questions</span>
+                    </span>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2.5 border-t border-[var(--border-subtle)] pt-4">
                     <Button asChild size="sm">
-                      <Link href={`/app/study/${p.id}`}>Study</Link>
+                      <Link href={`/app/study/${p.id}`}>Study Quiz</Link>
                     </Button>
                     <Button asChild size="sm" variant="secondary">
                       <Link href={`/app/study-packs/${p.id}`}>Open pack</Link>

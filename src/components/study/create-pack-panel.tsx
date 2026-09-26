@@ -45,6 +45,7 @@ export function CreatePackPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
+  const [outputKind, setOutputKind] = useState<"quiz" | "flashcards" | "summary">("quiz");
   const [requestState, setRequestState] = useState<RequestState>(createInitialRequestState);
   const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
 
@@ -126,6 +127,15 @@ export function CreatePackPanel() {
   async function generate() {
     setError("");
     setWarning("");
+
+    if (outputKind !== "quiz") {
+      setError(
+        outputKind === "flashcards"
+          ? "Flashcards generation will be available in Phase 4. Please select Practice Quiz for now."
+          : "Summary reviewer generation will be available in Phase 3. Please select Practice Quiz for now."
+      );
+      return;
+    }
 
     if (tab === "pdf") {
       if (!pdfDoc) {
@@ -521,6 +531,94 @@ export function CreatePackPanel() {
             </span>
           </label>
         )}
+        </div>
+
+        {/* Output Artifact Selection */}
+        <div className="mt-6 border-t border-[var(--border-subtle)] pt-5">
+          <label className="block font-extrabold text-sm sm:text-base text-[var(--text-primary)]">
+            Choose Output Artifact
+          </label>
+          <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+            Select the primary study output to generate from your source material.
+          </p>
+
+          <div
+            role="radiogroup"
+            aria-label="Output Artifact"
+            className="mt-3 grid gap-3 sm:grid-cols-3"
+          >
+            {[
+              {
+                id: "quiz" as const,
+                label: "Practice Quiz",
+                badge: "Active",
+                desc: "Multiple choice & fill-in-the-blank practice with immediate feedback.",
+                icon: Sparkle,
+                active: true,
+              },
+              {
+                id: "flashcards" as const,
+                label: "Flashcards",
+                badge: "Phase 4",
+                desc: "Flip cards with typed recall, delayed retry & mastery tracking.",
+                icon: NotePencil,
+                active: false,
+              },
+              {
+                id: "summary" as const,
+                label: "Study Summary",
+                badge: "Phase 3",
+                desc: "Structured summary with key concepts, definitions & relationships.",
+                icon: FilePdf,
+                active: false,
+              },
+            ].map(({ id, label, badge, desc, icon: Icon, active }) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={outputKind === id}
+                onClick={() => {
+                  setOutputKind(id);
+                  if (!active) {
+                    setWarning(
+                      id === "flashcards"
+                        ? "Flashcards study loop is launching in Phase 4. Select Practice Quiz to generate questions now."
+                        : "Structured study summaries are launching in Phase 3. Select Practice Quiz to generate questions now."
+                    );
+                  } else {
+                    setWarning("");
+                  }
+                }}
+                className={cn(
+                  "flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer",
+                  outputKind === id
+                    ? "border-[var(--fetch-blue-600)] bg-[var(--fetch-blue-50)] shadow-sm"
+                    : "border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-[var(--border-strong)]"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-bold text-sm">
+                    <Icon size={16} className={outputKind === id ? "text-[var(--fetch-blue-700)]" : "text-[var(--text-tertiary)]"} />
+                    <span>{label}</span>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[10px] font-bold px-1.5 py-0.5 rounded",
+                      active
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-[var(--surface-subtle)] text-[var(--text-tertiary)]"
+                    )}
+                  >
+                    {badge}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-[var(--text-secondary)] leading-relaxed">
+                  {desc}
+                </p>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">

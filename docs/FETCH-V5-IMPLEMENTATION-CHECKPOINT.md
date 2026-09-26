@@ -9,8 +9,8 @@
 
 - [x] **Phase 0 — Baseline and remote contract audit**: PASS
 - [x] **Phase 1 — Critical truth and contract repairs**: PASS
-- [ ] **Phase 2 — Artifact model and creation choice**: IN PROGRESS
-- [ ] **Phase 3 — Durable 50-question generation and review content**: PENDING
+- [x] **Phase 2 — Artifact model and creation choice**: PASS
+- [ ] **Phase 3 — Durable 50-question generation and review content**: IN PROGRESS
 - [ ] **Phase 4 — Generated and manual flashcards with mastery**: PENDING
 - [ ] **Phase 5 — Physical-paper Scan intake**: PENDING
 - [ ] **Phase 6 — Focused Tutor and safe answer rendering**: PENDING
@@ -22,29 +22,33 @@
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 2 — Artifact model and creation choice
-- **Next Safe Resume Point:** Phase 2 execution
+- **Current Phase:** Phase 3 — Durable 50-question generation and review content
+- **Next Safe Resume Point:** Phase 3 execution
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 1 Verification & Summary
+## 3. Phase 2 Verification & Summary
 
 - **Status:** PASS
 - **Implemented Changes:**
-  1. Live Room Creation: Updated `create_live_room` RPC to remove non-existent `visibility` column check on `public.study_packs` and enforce strict owner authorization (`where id = p_pack_id and owner_id = v_caller`). Applied remote migration and updated `core.sql`.
-  2. PDF Source Status: Relaxed check constraint on `private.source_documents.extraction_status` to include `'processed'` alongside `'extracted'`. Updated `src/app/api/pdf/generate/route.ts` to use `'extracted'`, capture RPC errors, and log warnings without crashing.
-  3. Direct Messaging: Normalized `FriendItem` DTO in `src/app/app/(workspace)/messages/page.tsx` so both `id` and `userId` are populated. Clicking `+` now guarantees a valid friend UUID is sent to `POST /api/conversations`, and existing open conversations with that friend are reused instead of raising an error or recreating conversations.
-  4. Truthful Feature Matrix: Updated `src/lib/feature-availability.ts` to reflect real account capabilities for PDF intake, multiplayer live rooms, and study buddies/messaging.
-- **Migrations Applied:** `20260926010000_repair_contracts_and_live_schema.sql` (applied and synchronized to remote Supabase DB).
-- **Test Suite Results:** 27 test files passed (212 tests), 0 failures. Typecheck clean (0 errors).
+  1. Artifact Model: Created `public.study_artifacts` table (`id`, `pack_id`, `owner_id`, `kind`, `origin`, `status`, `title`, `version`, `created_at`, `updated_at`) with strict owner RLS and composite indexes.
+  2. Legacy Backfill: Backfilled one 1:1 legacy `quiz` artifact for all existing study packs on the remote database.
+  3. Question & Attempt Linkage: Added `artifact_id` to `public.questions`, `public.study_sessions`, and `public.study_session_drafts`, backfilled existing records, and added unique constraint `(artifact_id, position)`.
+  4. Database Functions: Updated `private.persist_study_pack` to transactionally create the parent study pack and primary quiz artifact, returning both `packId` and `artifactId`. Added `public.list_study_artifacts(p_pack_id)`. Updated `private.grade_study_answer` to dynamically resolve packs by either `pack_id` or `artifact_id`.
+  5. UI Selection: Added semantic Output Artifact Selection in `CreatePackPanel` (Quiz, Flashcards, Summary) with keyboard accessibility, truthful availability badges, and validation before generation.
+  6. Library View: Updated `study-packs/page.tsx` with artifact indicators and clear "Study Quiz" action buttons.
+- **Migrations Applied:**
+  - `20260926010000_repair_contracts_and_live_schema.sql` (Phase 1)
+  - `20260926020000_study_artifacts_model.sql` (Phase 2, applied to remote Supabase DB and synchronized in `core.sql`).
+- **Test Suite Results:** 28 test files passed (216 tests), 0 failures. Typecheck clean (0 errors).
 
 ---
 
-## 4. Phase 2 Scope & Plan
+## 4. Phase 3 Scope & Plan
 
-- Create `public.study_artifacts` table (`id`, `pack_id`, `owner_id`, `kind`, `origin`, `status`, `title`, `version`, `created_at`, `updated_at`).
-- Backfill one legacy `quiz` artifact for every existing study pack in `public.study_packs`.
-- Add nullable `artifact_id` to `public.questions`, backfill `artifact_id` from the newly created quiz artifacts, and add unique constraint `(artifact_id, position)`.
-- Update pack creation / quiz resolution RPCs to populate and link the artifact ID.
-- Provide user output choice (Quiz, Flashcards, Summary) in generation UI with truthful delivery states.
+- Implement durable large quiz (up to 50 questions) and private structured summary generation.
+- Database tables: `private.generation_jobs`, `private.generation_job_batches`, `private.generation_job_inputs`, and `private.summary_content`.
+- Bounded batching: 8–10 questions per batch, max 5 batches for 50 questions, grounding check and deduplication across batches.
+- Single atomic transaction for pack/artifact/question/summary creation and quota commit.
+- Polling status endpoint with stage progress (`extracting`, `batching`, `grounding`, `saving`, `completed`, `failed`, `cancelled`).
