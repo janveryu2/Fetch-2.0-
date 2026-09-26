@@ -15,14 +15,35 @@ import { useDemo } from "@/components/app/demo-provider";
 import { loadStudySessionDraft } from "@/lib/study-session-draft";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SummaryViewer } from "@/components/study/summary-viewer";
 
 export function StudyPackDetail({ packId }: { packId: string }) {
   const { packs, attempts, mode, userId } = useDemo();
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [hasActiveDraft, setHasActiveDraft] = useState(false);
+  const [artifacts, setArtifacts] = useState<Array<{ id: string; kind: string; title: string }>>([]);
+  const [activeTab, setActiveTab] = useState<"quiz" | "summary">("quiz");
 
   const lastAttempt = attempts.find((item) => item.packId === packId);
   const pack = packs.find((item) => item.id === packId);
+
+  useEffect(() => {
+    if (mode === "account") {
+      fetch(`/api/artifacts?packId=${packId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.artifacts) {
+            setArtifacts(data.artifacts);
+            const hasSummary = data.artifacts.some((a: { kind: string }) => a.kind === "summary");
+            const hasQuiz = data.artifacts.some((a: { kind: string }) => a.kind === "quiz");
+            if (hasSummary && (!hasQuiz || (pack && pack.questions.length === 0))) {
+              setActiveTab("summary");
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [packId, mode, pack]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -103,19 +124,51 @@ export function StudyPackDetail({ packId }: { packId: string }) {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-[1fr_300px]">
-        <section className="surface-card p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-display text-2xl font-semibold">Cards</h2>
-              <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                Answers are concealed to protect active recall before practice.
-              </p>
-            </div>
-            <Badge tone="neutral">{pack.questions.length}</Badge>
-          </div>
+      {artifacts.some((a) => a.kind === "summary") && (
+        <div className="mt-6 flex gap-2 border-b border-[var(--border-subtle)] pb-2">
+          {pack.questions.length > 0 && (
+            <button
+              onClick={() => setActiveTab("quiz")}
+              className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer ${
+                activeTab === "quiz"
+                  ? "bg-[var(--fetch-blue-600)] text-white"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
+              }`}
+            >
+              Practice Quiz ({pack.questions.length})
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab("summary")}
+            className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer ${
+              activeTab === "summary"
+                ? "bg-[var(--fetch-blue-600)] text-white"
+                : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]"
+            }`}
+          >
+            Study Summary
+          </button>
+        </div>
+      )}
 
-          <div className="mt-5 divide-y divide-[var(--border-subtle)]">
+      <div className="mt-8 grid gap-4 md:grid-cols-[1fr_300px]">
+        {activeTab === "summary" && artifacts.find((a) => a.kind === "summary") ? (
+          <section className="space-y-4">
+            <SummaryViewer artifactId={artifacts.find((a) => a.kind === "summary")!.id} />
+          </section>
+        ) : (
+          <section className="surface-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display text-2xl font-semibold">Cards</h2>
+                <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                  Answers are concealed to protect active recall before practice.
+                </p>
+              </div>
+              <Badge tone="neutral">{pack.questions.length}</Badge>
+            </div>
+
+            <div className="mt-5 divide-y divide-[var(--border-subtle)]">
             {pack.questions.map((question, index) => {
               const isRevealed = Boolean(revealedAnswers[question.id]);
               const answerRegionId = `ans-${question.id}`;
@@ -185,6 +238,7 @@ export function StudyPackDetail({ packId }: { packId: string }) {
             })}
           </div>
         </section>
+        )}
 
         <aside className="space-y-4">
           <div className="surface-card p-5">

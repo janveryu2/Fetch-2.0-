@@ -107,18 +107,58 @@ export function verifySourceGrounding(source: string, quote: string): boolean {
     }
   }
 
-  // Secondary match: strip all non-alphanumeric characters to bridge OCR linebreaks and hyphens
+  // Full-span alphanumeric match: bridge OCR linebreaks, whitespace differences, and hyphenation
   const cleanSource = normSource.replace(/[^a-z0-9]/g, "");
   const cleanQuote = normQuote.replace(/[^a-z0-9]/g, "");
   if (cleanQuote.length >= 8 && cleanSource.includes(cleanQuote)) {
     return true;
   }
 
-  // Tertiary match: if quote is long (>25 chars), check if prefix of at least 20 chars matches
-  if (cleanQuote.length > 25) {
-    const prefix = cleanQuote.slice(0, 20);
-    if (cleanSource.includes(prefix)) {
-      return true;
+  return false;
+}
+
+export function isQuestionDuplicate(
+  candidate: { prompt: string; answer: string },
+  existing: Array<{ prompt: string; answer: string }>
+): boolean {
+  const normCandPrompt = candidate.prompt.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normCandAnswer = candidate.answer.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  for (const item of existing) {
+    const normItemPrompt = item.prompt.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normItemAnswer = item.answer.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    // 1. Identical prompt after normalization
+    if (normCandPrompt === normItemPrompt) return true;
+
+    // 2. Same answer with high prompt overlap (containment or token jaccard > 0.6)
+    if (normCandAnswer.length > 2 && normCandAnswer === normItemAnswer) {
+      if (normCandPrompt.includes(normItemPrompt) || normItemPrompt.includes(normCandPrompt)) {
+        return true;
+      }
+      const cleanCandWords = candidate.prompt
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+      const cleanItemWords = item.prompt
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+      const candTokens = new Set(cleanCandWords);
+      const itemTokens = new Set(cleanItemWords);
+      if (candTokens.size > 0 && itemTokens.size > 0) {
+        let intersection = 0;
+        for (const t of candTokens) {
+          if (itemTokens.has(t)) intersection++;
+        }
+        const union = new Set([...candTokens, ...itemTokens]).size;
+        if (union > 0 && intersection / union >= 0.5) {
+          return true;
+        }
+      }
     }
   }
 

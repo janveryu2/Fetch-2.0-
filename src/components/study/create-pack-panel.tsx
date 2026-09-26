@@ -48,6 +48,75 @@ export function CreatePackPanel() {
   const [outputKind, setOutputKind] = useState<"quiz" | "flashcards" | "summary">("quiz");
   const [requestState, setRequestState] = useState<RequestState>(createInitialRequestState);
   const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
+  const [jobProgress, setJobProgress] = useState<{
+    jobId: string;
+    stage: string;
+    acceptedCount: number;
+    requestedCount: number;
+    cancelRequested: boolean;
+  } | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  // Poll active generation job
+  useEffect(() => {
+    if (!jobProgress?.jobId) return;
+    if (
+      jobProgress.stage === "completed" ||
+      jobProgress.stage === "failed" ||
+      jobProgress.stage === "cancelled"
+    ) {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/generate/job/${jobProgress.jobId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setJobProgress({
+          jobId: data.jobId,
+          stage: data.stage,
+          acceptedCount: data.acceptedCount || 0,
+          requestedCount: data.requestedCount,
+          cancelRequested: data.cancelRequested,
+        });
+
+        if (data.status === "completed") {
+          clearInterval(interval);
+          setLoading(false);
+          const redirectId = data.packId;
+          if (redirectId) {
+            router.push(`/app/study-packs/${redirectId}`);
+          }
+        } else if (data.status === "failed") {
+          clearInterval(interval);
+          setLoading(false);
+          setError(data.failureMessage || "Generation failed. Please retry.");
+        } else if (data.status === "cancelled") {
+          clearInterval(interval);
+          setLoading(false);
+          setWarning("Generation was cancelled. Quota was not charged.");
+        }
+      } catch {
+        // Polling tick retry
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [jobProgress?.jobId, jobProgress?.stage, router]);
+
+  async function cancelJob() {
+    if (!jobProgress?.jobId) return;
+    setCancelling(true);
+    try {
+      await fetch(`/api/generate/job/${jobProgress.jobId}/cancel`, { method: "POST" });
+      setJobProgress((prev) => (prev ? { ...prev, cancelRequested: true } : null));
+    } catch {
+      // Ignored
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   const [pdfDoc, setPdfDoc] = useState<{
     docId: string;
@@ -128,15 +197,58 @@ export function CreatePackPanel() {
     setError("");
     setWarning("");
 
-    if (outputKind !== "quiz") {
-      setError(
-        outputKind === "flashcards"
-          ? "Flashcards generation will be available in Phase 4. Please select Practice Quiz for now."
-          : "Summary reviewer generation will be available in Phase 3. Please select Practice Quiz for now."
-      );
+    if (outputKind === "flashcards") {
+      setError("Flashcards generation will be available in Phase 4. Please select Practice Quiz or Study Summary for now.");
       return;
     }
 
+    if (mode === "account") {
+      if (tab === "pdf" && !pdfDoc) {
+        setError("Please upload a PDF document first.");
+        return;
+      }
+      setLoading(true);
+      setError("");
+      setWarning("");
+
+      try {
+        const rawSource = tab === "pdf" ? pdfDoc!.textPreview : source.trim();
+        const sourceLabel = tab === "pdf" ? `PDF: ${pdfDoc!.fileName}` : "Pasted Notes";
+        const sourceType = tab === "pdf" ? "pdf" : "text";
+
+        const response = await fetch("/api/generate/job", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            source: rawSource,
+            count,
+            artifactKind: outputKind,
+            sourceType,
+            sourceLabel,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || data.error || "Failed to start generation job");
+        }
+
+        setJobProgress({
+          jobId: data.jobId,
+          stage: data.stage || "queued",
+          acceptedCount: 0,
+          requestedCount: count,
+          cancelRequested: false,
+        });
+      } catch (err) {
+        setLoading(false);
+        setError(err instanceof Error ? err.message : "Failed to start generation");
+      }
+      return;
+    }
+
+    // Browser demo fallback
     if (tab === "pdf") {
       if (!pdfDoc) {
         setError("Please upload a PDF document first.");
@@ -246,7 +358,7 @@ export function CreatePackPanel() {
         setWarning(data.warning);
       }
 
-      const id = mode === "account" ? data.packId : crypto.randomUUID();
+      const id = data.packId || crypto.randomUUID();
       if (!id) throw new Error("FETCH could not confirm that this StudyPack was saved.");
 
       // Success: generate fresh requestId for the next session
@@ -255,14 +367,7 @@ export function CreatePackPanel() {
       addPack({
         id,
         title: title.trim(),
-        sourceLabel:
-          mode === "account"
-            ? data.provider === "gemini"
-              ? "Pasted text · Gemini AI"
-              : data.provider === "openai"
-              ? "Pasted text · AI generated"
-              : "Pasted text · development fixture"
-            : "Pasted text · development fixture",
+        sourceLabel: "Pasted text · development fixture",
         createdAt: new Date().toISOString(),
         questions: data.questions,
         progress: 0,
@@ -273,7 +378,7 @@ export function CreatePackPanel() {
       setError(
         reason instanceof Error
           ? reason.message
-          : "FETCH could not create this StudyPack.",
+          : "FETCH could not create this StudyPack."
       );
     } finally {
       setLoading(false);
@@ -567,10 +672,10 @@ export function CreatePackPanel() {
               {
                 id: "summary" as const,
                 label: "Study Summary",
-                badge: "Phase 3",
+                badge: "Active",
                 desc: "Structured summary with key concepts, definitions & relationships.",
                 icon: FilePdf,
-                active: false,
+                active: true,
               },
             ].map(({ id, label, badge, desc, icon: Icon, active }) => (
               <button
@@ -582,9 +687,7 @@ export function CreatePackPanel() {
                   setOutputKind(id);
                   if (!active) {
                     setWarning(
-                      id === "flashcards"
-                        ? "Flashcards study loop is launching in Phase 4. Select Practice Quiz to generate questions now."
-                        : "Structured study summaries are launching in Phase 3. Select Practice Quiz to generate questions now."
+                      "Flashcards study loop is launching in Phase 4. Select Practice Quiz or Study Summary to generate now."
                     );
                   } else {
                     setWarning("");
@@ -621,40 +724,103 @@ export function CreatePackPanel() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
-          <label className="block font-extrabold">
-            Questions to generate
-            <input
-              type="range"
-              min="3"
-              max="12"
-              value={count}
-              onChange={(event) => setCount(Number(event.target.value))}
-              className="mt-3 w-full accent-[var(--fetch-blue-600)]"
-            />
-            <span className="mt-1 block text-sm text-[var(--text-secondary)]">
-              Up to {count} questions
-            </span>
-          </label>
-          <Button
-            onClick={generate}
-            disabled={isGenerateDisabled}
-            title={
-              isGenerateDisabled
-                ? "Add a title and at least 80 characters of material to generate"
-                : "Generate questions"
-            }
-            className="sm:min-w-48"
+        {outputKind === "quiz" && (
+          <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="block font-extrabold">
+              Questions to generate
+              <input
+                type="range"
+                min="3"
+                max="50"
+                value={count}
+                onChange={(event) => setCount(Number(event.target.value))}
+                className="mt-3 w-full accent-[var(--fetch-blue-600)]"
+              />
+              <span className="mt-1 block text-sm text-[var(--text-secondary)]">
+                Up to {count} questions (based on material coverage)
+              </span>
+            </label>
+            <Button
+              onClick={generate}
+              disabled={isGenerateDisabled}
+              title={
+                isGenerateDisabled
+                  ? "Add a title and at least 80 characters of material to generate"
+                  : "Generate questions"
+              }
+              className="sm:min-w-48"
+            >
+              {loading ? (
+                "Processing..."
+              ) : (
+                <>
+                  <Sparkle size={20} weight="fill" /> Generate Quiz
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {outputKind === "summary" && (
+          <div className="mt-5 flex justify-end">
+            <Button
+              onClick={generate}
+              disabled={isGenerateDisabled}
+              className="sm:min-w-48"
+            >
+              {loading ? (
+                "Analyzing and summarizing..."
+              ) : (
+                <>
+                  <Sparkle size={20} weight="fill" /> Generate Summary
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* Live Staged Generation Progress */}
+        {loading && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-5 rounded-xl border border-[var(--fetch-blue-200)] bg-[var(--fetch-blue-50)] p-4 text-sm"
           >
-            {loading ? (
-              "Writing questions..."
-            ) : (
-              <>
-                <Sparkle size={20} weight="fill" /> Generate
-              </>
-            )}
-          </Button>
-        </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="font-bold text-[var(--fetch-blue-900)]">
+                  {jobProgress?.cancelRequested
+                    ? "Stopping generation after this batch..."
+                    : jobProgress?.stage === "queued"
+                    ? "Queued in generation pipeline..."
+                    : jobProgress?.stage === "extracting"
+                    ? "Analyzing source material coverage..."
+                    : jobProgress?.stage === "batching"
+                    ? `Generating questions in batches (${jobProgress.acceptedCount}/${jobProgress.requestedCount} accepted)...`
+                    : jobProgress?.stage === "grounding"
+                    ? "Verifying factual grounding against source quotes..."
+                    : jobProgress?.stage === "finalizing"
+                    ? "Finalizing and saving StudyPack transactionally..."
+                    : "Writing your study material with AI..."}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--fetch-blue-700)]">
+                  Generation is running durably. You can wait or cancel without consuming quota.
+                </p>
+              </div>
+              {jobProgress && jobProgress.stage !== "finalizing" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={cancelJob}
+                  disabled={cancelling || jobProgress.cancelRequested}
+                  className="shrink-0"
+                >
+                  {jobProgress.cancelRequested ? "Stopping..." : "Stop generation"}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {warning && (
           <div role="status" className="notice mt-4 text-sm font-medium">

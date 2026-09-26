@@ -10,8 +10,11 @@
 - [x] **Phase 0 — Baseline and remote contract audit**: PASS
 - [x] **Phase 1 — Critical truth and contract repairs**: PASS
 - [x] **Phase 2 — Artifact model and creation choice**: PASS
-- [ ] **Phase 3 — Durable 50-question generation and review content**: IN PROGRESS
-- [ ] **Phase 4 — Generated and manual flashcards with mastery**: PENDING
+- [x] **Phase 0 — Baseline and remote contract audit**: PASS
+- [x] **Phase 1 — Critical truth and contract repairs**: PASS
+- [x] **Phase 2 — Artifact model and creation choice**: PASS
+- [x] **Phase 3 — Durable 50-question generation and review content**: PASS
+- [ ] **Phase 4 — Generated and manual flashcards with mastery**: IN PROGRESS
 - [ ] **Phase 5 — Physical-paper Scan intake**: PENDING
 - [ ] **Phase 6 — Focused Tutor and safe answer rendering**: PENDING
 - [ ] **Phase 7 — Friend profiles, messaging, and Live completion**: PENDING
@@ -22,33 +25,48 @@
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 3 — Durable 50-question generation and review content
-- **Next Safe Resume Point:** Phase 3 execution
+- **Current Phase:** Phase 4 — Generated and manual flashcards with mastery
+- **Next Safe Resume Point:** Phase 4 execution
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 2 Verification & Summary
+## 3. Phase 3 Verification & Summary
 
 - **Status:** PASS
 - **Implemented Changes:**
-  1. Artifact Model: Created `public.study_artifacts` table (`id`, `pack_id`, `owner_id`, `kind`, `origin`, `status`, `title`, `version`, `created_at`, `updated_at`) with strict owner RLS and composite indexes.
-  2. Legacy Backfill: Backfilled one 1:1 legacy `quiz` artifact for all existing study packs on the remote database.
-  3. Question & Attempt Linkage: Added `artifact_id` to `public.questions`, `public.study_sessions`, and `public.study_session_drafts`, backfilled existing records, and added unique constraint `(artifact_id, position)`.
-  4. Database Functions: Updated `private.persist_study_pack` to transactionally create the parent study pack and primary quiz artifact, returning both `packId` and `artifactId`. Added `public.list_study_artifacts(p_pack_id)`. Updated `private.grade_study_answer` to dynamically resolve packs by either `pack_id` or `artifact_id`.
-  5. UI Selection: Added semantic Output Artifact Selection in `CreatePackPanel` (Quiz, Flashcards, Summary) with keyboard accessibility, truthful availability badges, and validation before generation.
-  6. Library View: Updated `study-packs/page.tsx` with artifact indicators and clear "Study Quiz" action buttons.
+  1. Database Schema & Migration: Created and pushed `supabase/migrations/20260926030000_durable_large_generation.sql` to remote Supabase DB:
+     - `private.summary_content` table with strict owner-only RLS for structured summaries.
+     - `private.generation_jobs` table for resilient, staged question generation.
+     - `private.generation_job_inputs` (holds raw source text during generation and is purged on finalize).
+     - `private.generation_job_batches` (batches of up to 10 questions).
+     - Server RPCs: `private.start_generation_job`, `public.get_generation_job_status`, `public.request_cancel_generation_job`, `private.atomic_finalize_generation_job`, and `public.get_study_summary`.
+  2. Grounding & Deduplication Hardening:
+     - Replaced weak 20-char prefix-only match in `verifySourceGrounding` with full-span verification to strictly reject hallucinated/invented quote suffixes.
+     - Added cross-batch semantic and token-based deduplication (`isQuestionDuplicate`) to detect duplicate prompts and identical answer/topic overlaps across batches.
+  3. Durable Batch Generation Orchestration:
+     - Implemented `src/lib/ai/durable-generation.ts` for planning batches of at most 10 questions each, chunking source text, validating grounding, deduplicating, generating structured summaries (`overview`, `keyConcepts`, `definitions`, `relationships`, `remember`, `quickReview`), and checkpointing progress.
+     - Handled atomic transactional finalization with monthly quota commitment and source input cleanup.
+  4. Endpoints:
+     - `POST /api/generate/job`: Starts generation job atomically with quota check and runs worker.
+     - `GET /api/generate/job/[jobId]`: Returns safe owner status.
+     - `POST /api/generate/job/[jobId]/cancel`: Requests job cancellation without committing quota.
+     - `GET /api/artifacts/[artifactId]/summary`: Returns structured summary content.
+  5. UI Updates:
+     - In `src/components/study/create-pack-panel.tsx`: Expanded slider up to 50 questions with material coverage guidance, activated Summary artifact mode, added live staged progress feedback (`queued`, `extracting`, `batching`, `grounding`, `finalizing`), and added "Stop generation" cancel control.
+     - Created `src/components/study/summary-viewer.tsx` to render executive overview, key concepts, core terminology, and key takeaways with FETCH styling.
+     - Updated `src/components/study/study-pack-detail.tsx` with tab switching between Practice Quiz and Study Summary.
 - **Migrations Applied:**
   - `20260926010000_repair_contracts_and_live_schema.sql` (Phase 1)
-  - `20260926020000_study_artifacts_model.sql` (Phase 2, applied to remote Supabase DB and synchronized in `core.sql`).
-- **Test Suite Results:** 28 test files passed (216 tests), 0 failures. Typecheck clean (0 errors).
+  - `20260926020000_study_artifacts_model.sql` (Phase 2)
+  - `20260926030000_durable_large_generation.sql` (Phase 3)
+- **Test Suite Results:** 29 test files passed (230 tests), 0 failures. Typecheck clean (0 errors).
 
 ---
 
-## 4. Phase 3 Scope & Plan
+## 4. Phase 4 Scope & Plan
 
-- Implement durable large quiz (up to 50 questions) and private structured summary generation.
-- Database tables: `private.generation_jobs`, `private.generation_job_batches`, `private.generation_job_inputs`, and `private.summary_content`.
-- Bounded batching: 8–10 questions per batch, max 5 batches for 50 questions, grounding check and deduplication across batches.
-- Single atomic transaction for pack/artifact/question/summary creation and quota commit.
-- Polling status endpoint with stage progress (`extracting`, `batching`, `grounding`, `saving`, `completed`, `failed`, `cancelled`).
+- Flashcard schema: `public.flashcards`, `public.flashcard_sessions`, `public.flashcard_attempts`.
+- Front/back flip cards, typed recall, delayed retry queue, first-try vs eventual accuracy.
+- Manual flashcard deck creation and editing (CRUD).
+- Generated flashcard deck pipeline integration.

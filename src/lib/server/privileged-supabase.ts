@@ -364,3 +364,173 @@ export async function reconstructCommittedStudyPack(params: {
   }
 }
 
+export interface StartGenerationJobParams {
+  ownerId: string;
+  requestId: string;
+  payloadHash: string;
+  artifactKind: "quiz" | "flashcards" | "summary";
+  title: string;
+  sourceType: string;
+  sourceLabel: string;
+  sourceContent: string;
+  requestedCount: number;
+  fallbackClient?: SupabaseClient;
+}
+
+export interface GenerationJobStatusData {
+  jobId: string;
+  artifactKind: "quiz" | "flashcards" | "summary";
+  requestedCount: number;
+  acceptedCount: number;
+  stage: "queued" | "extracting" | "batching" | "grounding" | "finalizing" | "completed" | "failed" | "cancelled";
+  status: "in_progress" | "completed" | "failed" | "cancelled";
+  cancelRequested: boolean;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  packId?: string | null;
+  artifactId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function startGenerationJobServer(
+  params: StartGenerationJobParams
+): Promise<{ data: { jobId: string; status: string; stage: string; reused: boolean } | null; code?: string; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available to start generation job.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("start_generation_job", {
+      p_owner_id: params.ownerId,
+      p_request_id: params.requestId,
+      p_payload_hash: params.payloadHash,
+      p_artifact_kind: params.artifactKind,
+      p_title: params.title,
+      p_source_type: params.sourceType,
+      p_source_label: params.sourceLabel,
+      p_source_content: params.sourceContent,
+      p_requested_count: params.requestedCount,
+    });
+
+    if (error) {
+      return { data: null, code: error.code, error: new Error(error.message) };
+    }
+
+    return {
+      data: data as { jobId: string; status: string; stage: string; reused: boolean },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to start generation job"),
+    };
+  }
+}
+
+export async function getGenerationJobStatusServer(params: {
+  jobId: string;
+  client: SupabaseClient;
+}): Promise<{ data: GenerationJobStatusData | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("get_generation_job_status", {
+      p_job_id: params.jobId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as GenerationJobStatusData, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to fetch job status"),
+    };
+  }
+}
+
+export async function requestCancelGenerationJobServer(params: {
+  jobId: string;
+  client: SupabaseClient;
+}): Promise<{ data: { jobId: string; cancelRequested: boolean; status: string } | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("request_cancel_generation_job", {
+      p_job_id: params.jobId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { jobId: string; cancelRequested: boolean; status: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to cancel generation job"),
+    };
+  }
+}
+
+export async function atomicFinalizeGenerationJobServer(params: {
+  jobId: string;
+  questions?: unknown[];
+  summary?: unknown;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { status: string; packId?: string; artifactId?: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available for job finalization.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("atomic_finalize_generation_job", {
+      p_job_id: params.jobId,
+      p_questions: params.questions || [],
+      p_summary: params.summary || null,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return {
+      data: data as { status: string; packId?: string; artifactId?: string },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to finalize generation job"),
+    };
+  }
+}
+
+export async function getStudySummaryServer(params: {
+  artifactId: string;
+  client: SupabaseClient;
+}): Promise<{ data: unknown | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("get_study_summary", {
+      p_artifact_id: params.artifactId,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to fetch study summary"),
+    };
+  }
+}
+
