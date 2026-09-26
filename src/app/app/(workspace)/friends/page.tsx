@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   ArrowRight,
   Check,
@@ -389,7 +390,16 @@ export default function FriendsPage() {
                     className="flex items-center justify-between py-4 gap-4"
                   >
                     <div>
-                      <h4 className="font-bold text-base">{friend.displayName}</h4>
+                      {friend.username ? (
+                        <Link
+                          href={`/app/u/${friend.username}`}
+                          className="font-bold text-base hover:text-[var(--fetch-blue-700)] hover:underline inline-block"
+                        >
+                          {friend.displayName}
+                        </Link>
+                      ) : (
+                        <h4 className="font-bold text-base">{friend.displayName}</h4>
+                      )}
                       {friend.username && (
                         <p className="text-xs text-[var(--text-secondary)]">
                           @{friend.username}

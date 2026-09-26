@@ -4125,5 +4125,126 @@ $$;
 revoke all on function public.reorder_scan_pages(uuid, uuid[]) from public, anon;
 grant execute on function public.reorder_scan_pages(uuid, uuid[]) to authenticated, service_role;
 
+-- 1. Add optional education/program/subject fields and visibility switches to public.profiles
+alter table public.profiles add column if not exists education_level text default null;
+alter table public.profiles add column if not exists major_or_program text default null;
+alter table public.profiles add column if not exists primary_subject text default null;
+alter table public.profiles add column if not exists show_education boolean not null default false;
+alter table public.profiles add column if not exists show_program boolean not null default false;
+alter table public.profiles add column if not exists show_subject boolean not null default false;
+
+-- 2. Ensure default handle generation for future profiles if username is null
+create or replace function public.handle_profile_default_username()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.username is null or new.username = '' then
+    new.username := 'learner_' || pg_catalog.substr(pg_catalog.replace(pg_catalog.gen_random_uuid()::text, '-', ''), 1, 10);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profile_default_username on public.profiles;
+create trigger trg_profile_default_username
+before insert or update on public.profiles
+for each row
+execute function public.handle_profile_default_username();
+
+-- 3. Friend-scoped projection RPC: get_friend_profile
+create or replace function public.get_friend_profile(p_username text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_clean_username text;
+  v_target public.profiles%rowtype;
+  v_is_self boolean := false;
+  v_is_friend boolean := false;
+  v_friendship_status text := 'none';
+  v_dm_allowed boolean := true;
+  v_can_message boolean := false;
+begin
+  if v_uid is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  v_clean_username := lower(trim(p_username));
+  if v_clean_username like '@%' then
+    v_clean_username := substr(v_clean_username, 2);
+  end if;
+
+  select * into v_target
+  from public.profiles
+  where lower(username) = v_clean_username;
+
+  if not found then
+    raise exception 'User not found' using errcode = '42501';
+  end if;
+
+  v_is_self := (v_target.id = v_uid);
+
+  if v_is_self then
+    v_friendship_status := 'self';
+    v_is_friend := true;
+  else
+    if exists (
+      select 1 from public.friendships
+      where user_a = least(v_uid, v_target.id) and user_b = greatest(v_uid, v_target.id)
+    ) then
+      v_friendship_status := 'friend';
+      v_is_friend := true;
+    elsif exists (
+      select 1 from public.friend_requests
+      where sender_id = v_uid and recipient_id = v_target.id and status = 'pending'
+    ) then
+      v_friendship_status := 'outgoing_request';
+    elsif exists (
+      select 1 from public.friend_requests
+      where sender_id = v_target.id and recipient_id = v_uid and status = 'pending'
+    ) then
+      v_friendship_status := 'incoming_request';
+    else
+      v_friendship_status := 'none';
+    end if;
+  end if;
+
+  select coalesce(allow_direct_messages, true) into v_dm_allowed
+  from private.account_preferences
+  where user_id = v_target.id;
+  if not found then
+    v_dm_allowed := true;
+  end if;
+
+  v_can_message := v_is_friend and v_dm_allowed and not v_is_self;
+
+  return pg_catalog.jsonb_build_object(
+    'id', v_target.id,
+    'username', v_target.username,
+    'displayName', v_target.display_name,
+    'avatarUrl', v_target.avatar_url,
+    'friendshipStatus', v_friendship_status,
+    'canMessage', v_can_message,
+    'allowDirectMessages', v_dm_allowed,
+    'education', case when (v_is_self or (v_is_friend and v_target.show_education)) then v_target.education_level else null end,
+    'program', case when (v_is_self or (v_is_friend and v_target.show_program)) then v_target.major_or_program else null end,
+    'subject', case when (v_is_self or (v_is_friend and v_target.show_subject)) then v_target.primary_subject else null end
+  );
+end;
+$$;
+
+revoke all on function public.get_friend_profile(text) from public, anon;
+grant execute on function public.get_friend_profile(text) to authenticated, service_role;
+
+-- 4. Add artifact_id to live_rooms
+alter table public.live_rooms add column if not exists artifact_id uuid references public.study_artifacts(id) on delete set null;
+
+
 
 

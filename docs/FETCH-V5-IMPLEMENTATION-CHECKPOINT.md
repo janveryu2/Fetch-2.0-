@@ -14,51 +14,51 @@
 - [x] **Phase 4 — Generated and manual flashcards with mastery**: PASS
 - [x] **Phase 5 — Physical-paper Scan intake**: PASS
 - [x] **Phase 6 — Focused Tutor and safe answer rendering**: PASS
-- [ ] **Phase 7 — Friend profiles, messaging, and Live completion**: IN PROGRESS
-- [ ] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: PENDING
+- [x] **Phase 7 — Friend profiles, messaging, and Live completion**: PASS
+- [ ] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: IN PROGRESS
 - [ ] **Phase 9 — Full regression, staged rollout, and production verification**: PENDING
 
 ---
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 7 — Friend profiles, messaging, and Live completion
-- **Next Safe Resume Point:** Phase 7 execution
+- **Current Phase:** Phase 8 — Timer audio, notifications, curated music, and identity polish
+- **Next Safe Resume Point:** Phase 8 execution
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 6 Verification & Summary
+## 3. Phase 7 Verification & Summary
 
 - **Status:** PASS
 - **Implemented Changes:**
-  1. Source Relevance Retrieval (`src/lib/study/tutor-retrieval.ts`):
-     - Labeled chunk segmentation supporting multi-page headers (`--- Page X ---`) and section headings.
-     - Term frequency, keyword, and exact phrase scoring to retrieve top relevant chunks (up to 4 chunks, capped at 3,500 characters).
-     - Clean citation attribution in prompt context (`[Source: Page 2]`).
-     - Explicit grounding instructions to honestly admit when a topic is absent in the source rather than hallucinating.
-  2. Bounded Context & Prompt Budget (`src/lib/ai/groq-tutor.ts`):
-     - Limited conversation history to the latest 6 turns (12 messages maximum).
-     - Connected source chunk retrieval to `streamReply`.
-  3. Safe Markdown Rendering (`src/components/study/safe-markdown.tsx`):
-     - Full semantic rendering of headings, bold, italics, bullet lists, numbered lists, blockquotes, inline code, and fenced code blocks.
-     - XSS protection: strictly strips `<script>`, `<iframe>`, `<embed>`, `<object>`, inline event handlers (`onerror`, `onload`).
-     - Protocol sanitization: strictly restricts links to `http:` and `https:`, blocking `javascript:` and data URIs.
-     - Strips decorative raw clichés (isolated `||` or `//`).
-  4. Conversation-First UI & Focus Mode (`src/app/app/(workspace)/tutor/page.tsx`):
-     - Added Focus Mode toggle (`variant="primary"` / `variant="secondary"`) expanding conversation viewport to `75dvh`.
-     - Accessible collapsible secondary controls (`showControls` disclosure) for past conversations, StudyPack context, and availability info.
-     - Safe Markdown rendering applied to both saved messages and active streaming tokens.
-- **Test Suite Results:** 32 test files passed (264 tests), 0 failures. Typecheck clean (0 errors).
+  1. Profile Extension & Unique Non-Email Usernames (`supabase/migrations/20260926060000_friend_profiles_and_live.sql`):
+     - Added `education_level`, `major_or_program`, `primary_subject`, `show_education`, `show_program`, `show_subject` (defaulting to false) to `public.profiles`.
+     - Automatic generation of random non-email usernames (`learner_<random_hex>`) on profile creation when no handle is provided.
+     - Backfilled all profiles missing usernames with `learner_<random_hex>`.
+  2. Public Safe Friend Profile RPC (`public.get_friend_profile(p_username text)`):
+     - Scoped projection returning only id, username, display_name, avatar_url, friendship status (`friend`, `pending_sent`, `pending_received`, `none`), and strictly opt-in academic details.
+     - Never leaks user emails, study packs, source texts, flashcard reviews, or private messages.
+  3. API & Routes:
+     - `GET /api/users/[username]`: Authenticated endpoint querying `get_friend_profile`.
+     - `/app/u/[username]`: Dedicated friend profile page with opt-in academic badge disclosures, DM action, and privacy protection.
+     - Linked friend names and search result handles on `/app/friends` to `/app/u/[username]`.
+  4. DM Permissions:
+     - Enforced `allow_direct_messages` check in `public.get_or_create_direct_conversation`.
+  5. Live Multiplayer Artifact Link:
+     - Added `artifact_id` column to `public.live_rooms`.
+     - Updated `create_live_room` to accept optional `p_artifact_id` while preserving backward compatibility when omitted.
+     - Updated `/api/live/rooms` to accept optional `artifactId`.
+- **Test Suite Results:** 33 test files passed (270 tests), 0 failures. Typecheck clean (0 errors).
 
 ---
 
-## 4. Phase 7 Scope & Plan
+## 4. Phase 8 Scope & Plan
 
-- Friend profiles, messaging, and Live completion:
-  - Backfill random unique, non-email-derived usernames for all accounts without handles.
-  - Optional education/program/subject profile fields with default-off visibility.
-  - Friend-scoped projection RPC returning only public-safe fields (no email, packs, sources, answers, or messages).
-  - Public username route (`/u/[username]`).
-  - Message action connecting to direct chat conversation (reusing canonical pair, enforcing `allow_direct_messages`).
-  - Live multiplayer room with artifact selection and server-authoritative scoring.
+- Timer audio, notifications, curated music, and identity polish:
+  - Audio controller for start/completion bark and alarm with graceful fallback when audio assets are missing (audio-quality gate remains pending user MP3s as specified in plan section A6/Phase 8).
+  - Permissioned browser notifications via Notification API with explicit user opt-in.
+  - Pomodoro timer boundary tests and background throttling resilience (using `endAt` timestamps).
+  - Curated study music streams (`src/lib/music/curated-tracks.ts`) with the three approved public classical streams and graceful embed fallback.
+  - Verify app identity, metadata, and favicon across layouts.
+

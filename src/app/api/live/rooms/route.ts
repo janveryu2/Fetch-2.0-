@@ -4,6 +4,7 @@ import { createApiErrorResponse } from "@/lib/api-errors";
 
 const createRoomSchema = z.object({
   packId: z.string().uuid(),
+  artifactId: z.string().uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -16,9 +17,14 @@ export async function POST(request: Request) {
     return createApiErrorResponse("INVALID_REQUEST", "Valid pack ID required.", 400);
   }
 
-  const { data, error } = await context.supabase.rpc("create_live_room", {
+  const rpcParams: Record<string, unknown> = {
     p_pack_id: parsed.data.packId,
-  });
+  };
+  if (parsed.data.artifactId) {
+    rpcParams.p_artifact_id = parsed.data.artifactId;
+  }
+
+  const { data, error } = await context.supabase.rpc("create_live_room", rpcParams);
 
   if (error) {
     return createApiErrorResponse(
