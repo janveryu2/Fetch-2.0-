@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     if (error || typeof data !== "string") {
       return Response.json({ error: "StudyPack material could not be loaded." }, { status: 404 });
     }
-    source = data.slice(0, 12000);
+    source = data.slice(0, 80000);
   }
 
   let history: TutorChatMessage[] = [];

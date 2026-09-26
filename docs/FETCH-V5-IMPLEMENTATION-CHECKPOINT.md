@@ -13,8 +13,8 @@
 - [x] **Phase 3 — Durable 50-question generation and review content**: PASS
 - [x] **Phase 4 — Generated and manual flashcards with mastery**: PASS
 - [x] **Phase 5 — Physical-paper Scan intake**: PASS
-- [ ] **Phase 6 — Focused Tutor and safe answer rendering**: IN PROGRESS
-- [ ] **Phase 7 — Friend profiles, messaging, and Live completion**: PENDING
+- [x] **Phase 6 — Focused Tutor and safe answer rendering**: PASS
+- [ ] **Phase 7 — Friend profiles, messaging, and Live completion**: IN PROGRESS
 - [ ] **Phase 8 — Timer audio, notifications, curated music, and identity polish**: PENDING
 - [ ] **Phase 9 — Full regression, staged rollout, and production verification**: PENDING
 
@@ -22,50 +22,43 @@
 
 ## 2. Current Execution State
 
-- **Current Phase:** Phase 6 — Focused Tutor and safe answer rendering
-- **Next Safe Resume Point:** Phase 6 execution
+- **Current Phase:** Phase 7 — Friend profiles, messaging, and Live completion
+- **Next Safe Resume Point:** Phase 7 execution
 - **Unresolved Blockers:** None
 
 ---
 
-## 3. Phase 5 Verification & Summary
+## 3. Phase 6 Verification & Summary
 
 - **Status:** PASS
 - **Implemented Changes:**
-  1. Storage Bucket & Policies:
-     - Configured private bucket `study-scans` (JPEG/PNG only, max 5 MiB per page, max 20 MiB per document).
-     - Owner-only storage RLS policies for upload, read, and delete (`(storage.foldername(name))[1] = auth.uid()::text`).
-  2. Database Schema & Migration:
-     - Applied migrations `20260926050000_paper_scan_intake.sql` and `20260926050001_scan_source_type.sql` to remote Supabase DB.
-     - `private.scan_documents`: `id`, `owner_id`, `status` (`draft`, `extracting`, `extracted`, `finalized`, `failed`), `combined_text`, `pack_id`, `page_count` (0..5), timestamps, with RLS.
-     - `private.scan_pages`: `id`, `document_id`, `owner_id`, `position` (0..4), `storage_path`, `mime_type`, `file_size_bytes`, `dimensions`, `extracted_text`, `quality_flag` (`ok`, `blurry`, `low_contrast`, `rotated`, `unreadable`), timestamps, unique `(document_id, position)`, with RLS.
-     - RPCs: `public.create_scan_document`, `public.register_scan_page`, `public.update_scan_page_text`, `public.update_scan_document_text`, `public.get_scan_document`, `public.delete_scan_document`, `public.reorder_scan_pages`.
-  3. API Endpoints:
-     - `POST /api/scan/upload`: Uploads page images to `study-scans`, rejects unsupported HEIC with explicit error, enforces 5 MiB limit, registers page in DB.
-     - `POST /api/scan/extract`: Multimodal Gemini OCR extracts text and evaluates visual clarity (quality flags), stores per-page text, combines and saves document text.
-     - `GET /api/scan/documents/[id]`: Owner-scoped scan document and page retrieval.
-     - `PATCH /api/scan/documents/[id]`: Authoritative human review and edited text persistence.
-     - `DELETE /api/scan/documents/[id]`: Deletes document record and removes physical image objects from `study-scans` storage bucket.
-     - `POST /api/scan/reorder`: Updates ordered page positions.
-     - `POST /api/generate/job`: Added `"scan"` to `jobRequestSchema` `sourceType`.
-  4. Frontend UI:
-     - `src/components/study/paper-scan-intake.tsx`: Camera capture (`capture="environment"`) & file upload, up to 5 ordered pages, image previews, reorder controls, deletion, extraction progress, quality warning alerts, and human-editable textarea with character count.
-     - `src/components/study/create-pack-panel.tsx`: Added "Scan notes" tab with camera icon, connected to `PaperScanIntake` and seamless handoff to generation jobs.
-- **Migrations Applied:**
-  - `20260926010000_repair_contracts_and_live_schema.sql` (Phase 1)
-  - `20260926020000_study_artifacts_model.sql` (Phase 2)
-  - `20260926030000_durable_large_generation.sql` (Phase 3)
-  - `20260926040000_flashcards_mastery.sql` (Phase 4)
-  - `20260926050000_paper_scan_intake.sql` (Phase 5)
-  - `20260926050001_scan_source_type.sql` (Phase 5)
-- **Test Suite Results:** 31 test files passed (254 tests), 0 failures. Typecheck clean (0 errors).
+  1. Source Relevance Retrieval (`src/lib/study/tutor-retrieval.ts`):
+     - Labeled chunk segmentation supporting multi-page headers (`--- Page X ---`) and section headings.
+     - Term frequency, keyword, and exact phrase scoring to retrieve top relevant chunks (up to 4 chunks, capped at 3,500 characters).
+     - Clean citation attribution in prompt context (`[Source: Page 2]`).
+     - Explicit grounding instructions to honestly admit when a topic is absent in the source rather than hallucinating.
+  2. Bounded Context & Prompt Budget (`src/lib/ai/groq-tutor.ts`):
+     - Limited conversation history to the latest 6 turns (12 messages maximum).
+     - Connected source chunk retrieval to `streamReply`.
+  3. Safe Markdown Rendering (`src/components/study/safe-markdown.tsx`):
+     - Full semantic rendering of headings, bold, italics, bullet lists, numbered lists, blockquotes, inline code, and fenced code blocks.
+     - XSS protection: strictly strips `<script>`, `<iframe>`, `<embed>`, `<object>`, inline event handlers (`onerror`, `onload`).
+     - Protocol sanitization: strictly restricts links to `http:` and `https:`, blocking `javascript:` and data URIs.
+     - Strips decorative raw clichés (isolated `||` or `//`).
+  4. Conversation-First UI & Focus Mode (`src/app/app/(workspace)/tutor/page.tsx`):
+     - Added Focus Mode toggle (`variant="primary"` / `variant="secondary"`) expanding conversation viewport to `75dvh`.
+     - Accessible collapsible secondary controls (`showControls` disclosure) for past conversations, StudyPack context, and availability info.
+     - Safe Markdown rendering applied to both saved messages and active streaming tokens.
+- **Test Suite Results:** 32 test files passed (264 tests), 0 failures. Typecheck clean (0 errors).
 
 ---
 
-## 4. Phase 6 Scope & Plan
+## 4. Phase 7 Scope & Plan
 
-- Focused Tutor and safe answer rendering:
-  - Source chunk retrieval from relevant chunks instead of raw first 12,000 characters.
-  - Bounded history and prompt budget.
-  - Safe Markdown streaming and saved render path (sanitizing HTML and links, avoiding raw `**`, `//`, `||`).
-  - Conversation-first UI with collapsible controls and focus mode.
+- Friend profiles, messaging, and Live completion:
+  - Backfill random unique, non-email-derived usernames for all accounts without handles.
+  - Optional education/program/subject profile fields with default-off visibility.
+  - Friend-scoped projection RPC returning only public-safe fields (no email, packs, sources, answers, or messages).
+  - Public username route (`/u/[username]`).
+  - Message action connecting to direct chat conversation (reusing canonical pair, enforcing `allow_direct_messages`).
+  - Live multiplayer room with artifact selection and server-authoritative scoring.

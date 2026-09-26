@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowClockwise,
+  CaretDown,
+  CaretUp,
+  Eye,
+  EyeSlash,
   Lightbulb,
   NotePencil,
   Plus,
@@ -14,6 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
 import { useStudentPreferences } from "@/components/app/student-preferences-provider";
+import { SafeMarkdown } from "@/components/study/safe-markdown";
+import { cn } from "@/lib/cn";
 
 type TutorMessage = { role: "user" | "assistant"; content: string };
 type TutorConversation = {
@@ -43,6 +49,8 @@ export default function TutorPage() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [error, setError] = useState("");
+  const [focusMode, setFocusMode] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   const input = useRef<HTMLTextAreaElement>(null);
 
   const isTutorUsable = mode === "account" && tutorAvailable;
@@ -253,9 +261,22 @@ export default function TutorPage() {
     <div className="workspace !max-w-[1000px]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">FETCH AI Tutor</h1>
-        <span className="rounded-full bg-[var(--fetch-blue-100)] px-3 py-1 text-xs font-extrabold text-[var(--fetch-blue-800)] dark:bg-[var(--fetch-blue-950)] dark:text-[var(--fetch-blue-300)]">
-          {badgeText}
-        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={focusMode ? "primary" : "secondary"}
+            size="sm"
+            onClick={() => setFocusMode((prev) => !prev)}
+            className="flex items-center gap-1.5"
+            title={focusMode ? "Exit focus mode" : "Enter focus mode"}
+          >
+            {focusMode ? <EyeSlash size={16} /> : <Eye size={16} />}
+            <span>{focusMode ? "Focus Mode: On" : "Focus Mode"}</span>
+          </Button>
+          <span className="rounded-full bg-[var(--fetch-blue-100)] px-3 py-1 text-xs font-extrabold text-[var(--fetch-blue-800)] dark:bg-[var(--fetch-blue-950)] dark:text-[var(--fetch-blue-300)]">
+            {badgeText}
+          </span>
+        </div>
       </div>
       <p className="page-description">
         A place to work through the things that haven’t clicked yet.
@@ -336,20 +357,30 @@ export default function TutorPage() {
         )}
 
         {(!!messages.length || loading) && (
-          <div aria-live="polite" className="max-h-[55dvh] space-y-4 overflow-y-auto p-4 sm:p-7">
+          <div
+            aria-live="polite"
+            className={cn(
+              "space-y-4 overflow-y-auto p-4 sm:p-7 transition-all duration-200",
+              focusMode ? "max-h-[75dvh]" : "max-h-[55dvh]"
+            )}
+          >
             {messages.map((message, index) => (
               <article
                 key={`${index}-${message.role}`}
-                className={`rounded-2xl p-4 ${
+                className={`rounded-2xl p-4.5 ${
                   message.role === "assistant"
-                    ? "bg-[var(--surface-subtle)]"
+                    ? "bg-[var(--surface-subtle)] border border-[var(--border-subtle)]"
                     : "ml-auto max-w-[90%] bg-[var(--fetch-blue-100)] dark:bg-[var(--fetch-blue-950)]"
                 }`}
               >
                 <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">
                   {message.role === "assistant" ? "FETCH Tutor" : "You"}
                 </p>
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {message.role === "assistant" ? (
+                  <SafeMarkdown content={message.content} />
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                )}
               </article>
             ))}
             {pendingQuestion && (
@@ -357,19 +388,19 @@ export default function TutorPage() {
                 <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">
                   You
                 </p>
-                <p className="whitespace-pre-wrap">{pendingQuestion}</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed">{pendingQuestion}</p>
               </article>
             )}
             {!!streamedReply && (
-              <article className="rounded-2xl bg-[var(--surface-subtle)] p-4">
+              <article className="rounded-2xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)] p-4.5">
                 <p className="mb-1 text-xs font-extrabold uppercase tracking-wide text-[var(--text-secondary)]">
                   FETCH Tutor
                 </p>
-                <p className="whitespace-pre-wrap">{streamedReply}</p>
+                <SafeMarkdown content={streamedReply} />
               </article>
             )}
             {loading && (
-              <p role="status" className="text-sm text-[var(--text-secondary)]">
+              <p role="status" className="text-sm text-[var(--text-secondary)] animate-pulse">
                 FETCH is thinking…
               </p>
             )}
@@ -377,76 +408,104 @@ export default function TutorPage() {
         )}
 
         <div className="border-t border-[var(--border-subtle)] p-4 sm:p-5">
-          {isTutorUsable && (
-            <p className="notice" id="tutor-availability">
-              {availability}
-            </p>
-          )}
+          {/* Collapsible secondary controls header */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setShowControls((prev) => !prev)}
+              aria-expanded={showControls}
+              className="flex items-center gap-1.5 text-xs font-bold text-[var(--fetch-blue-700)] hover:underline cursor-pointer"
+            >
+              {showControls ? <CaretUp size={14} /> : <CaretDown size={14} />}
+              <span>
+                {showControls
+                  ? "Hide StudyPack context & past conversations"
+                  : "Show StudyPack context & past conversations"}
+              </span>
+            </button>
+            {packId && (
+              <span className="text-xs font-semibold text-[var(--fetch-blue-800)] dark:text-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] dark:bg-[var(--fetch-blue-950)] px-2.5 py-0.5 rounded-md border border-[var(--fetch-blue-200)]">
+                Context: {packs.find((p) => p.id === packId)?.title || "Selected StudyPack"}
+              </span>
+            )}
+          </div>
 
-          {mode === "account" && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="tutor-history">
-                Saved Tutor conversations
-              </label>
-              <select
-                id="tutor-history"
-                className="field min-w-0 flex-1"
-                value={conversationId}
-                disabled={loadingHistory}
-                onChange={(event) => {
-                  if (event.target.value) void openConversation(event.target.value);
-                }}
-              >
-                <option value="">
-                  {loadingHistory
-                    ? "Loading conversations..."
-                    : conversations.length === 0
-                      ? "No previous conversations"
-                      : "Recent Tutor conversations"}
-                </option>
-                {conversations.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.preview || "Study conversation"}
-                  </option>
-                ))}
-              </select>
-              <Button variant="secondary" onClick={newConversation} size="sm">
-                <Plus /> New
-              </Button>
-              {historyError && (
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  onClick={() => void refreshConversations()}
-                  title="Retry loading conversations"
-                >
-                  <ArrowClockwise /> Retry
-                </Button>
+          {showControls && (
+            <div className="mb-4 space-y-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4">
+              {isTutorUsable && (
+                <p className="notice" id="tutor-availability">
+                  {availability}
+                </p>
               )}
-            </div>
-          )}
 
-          <label className="field-label mt-4" htmlFor="tutor-pack-context">
-            StudyPack context
-          </label>
-          <select
-            id="tutor-pack-context"
-            className="field mt-1"
-            value={packId}
-            disabled={!!conversationId}
-            onChange={(event) => setPackId(event.target.value)}
-          >
-            <option value="">No StudyPack selected</option>
-            {packs.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-          {conversationId && (
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              This conversation keeps its StudyPack context. Start a new chat to change it.
-            </p>
+              {mode === "account" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="sr-only" htmlFor="tutor-history">
+                    Saved Tutor conversations
+                  </label>
+                  <select
+                    id="tutor-history"
+                    className="field min-w-0 flex-1"
+                    value={conversationId}
+                    disabled={loadingHistory}
+                    onChange={(event) => {
+                      if (event.target.value) void openConversation(event.target.value);
+                    }}
+                  >
+                    <option value="">
+                      {loadingHistory
+                        ? "Loading conversations..."
+                        : conversations.length === 0
+                          ? "No previous conversations"
+                          : "Recent Tutor conversations"}
+                    </option>
+                    {conversations.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.preview || "Study conversation"}
+                      </option>
+                    ))}
+                  </select>
+                  <Button variant="secondary" onClick={newConversation} size="sm">
+                    <Plus /> New
+                  </Button>
+                  {historyError && (
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onClick={() => void refreshConversations()}
+                      title="Retry loading conversations"
+                    >
+                      <ArrowClockwise /> Retry
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="field-label text-xs font-bold" htmlFor="tutor-pack-context">
+                  StudyPack context
+                </label>
+                <select
+                  id="tutor-pack-context"
+                  className="field mt-1 text-sm"
+                  value={packId}
+                  disabled={!!conversationId}
+                  onChange={(event) => setPackId(event.target.value)}
+                >
+                  <option value="">No StudyPack selected</option>
+                  {packs.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+                {conversationId && (
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                    This conversation keeps its StudyPack context. Start a new chat to change it.
+                  </p>
+                )}
+              </div>
+            </div>
           )}
 
           <label className="field-label mt-4" htmlFor="tutor-question">
