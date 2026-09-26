@@ -12,7 +12,7 @@ export const jobRequestSchema = z.object({
   source: z.string().trim().min(80).max(80_000),
   count: z.number().int().min(3).max(50).default(10),
   artifactKind: z.enum(["quiz", "flashcards", "summary"]).default("quiz"),
-  sourceType: z.enum(["text", "pdf", "url", "manual"]).default("text"),
+  sourceType: z.enum(["text", "pdf", "url", "manual", "scan"]).default("text"),
   sourceLabel: z.string().trim().min(1).max(120).default("Pasted Notes"),
   requestId: z.string().uuid().optional(),
 });

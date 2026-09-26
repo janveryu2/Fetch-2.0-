@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Camera,
   FilePdf,
   LinkSimple,
   NotePencil,
@@ -24,6 +25,7 @@ import {
   type RequestState,
 } from "@/lib/study/request-lifecycle";
 import { CreateManualDeckModal } from "@/components/study/create-manual-deck-modal";
+import { PaperScanIntake } from "@/components/study/paper-scan-intake";
 
 export function CreatePackPanel() {
   const router = useRouter();
@@ -36,6 +38,12 @@ export function CreatePackPanel() {
       label: "PDF",
       status: mode === "account" ? "Available" : "Sign in",
       icon: FilePdf,
+    },
+    {
+      id: "scan",
+      label: "Scan notes",
+      status: mode === "account" ? "Available" : "Sign in",
+      icon: Camera,
     },
     { id: "url", label: "Link", status: "Coming soon", icon: LinkSimple },
   ] as const;
@@ -128,6 +136,8 @@ export function CreatePackPanel() {
     textPreview: string;
   } | null>(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [scanDocId, setScanDocId] = useState<string | null>(null);
+  const [scanText, setScanText] = useState("");
 
   // Fetch quota balance for authenticated account users
   useEffect(() => {
@@ -150,6 +160,7 @@ export function CreatePackPanel() {
     title.trim().length < 2 ||
     (tab === "paste" && source.trim().length < 80) ||
     (tab === "pdf" && (!pdfDoc || mode !== "account")) ||
+    (tab === "scan" && (!scanDocId || scanText.trim().length < 80 || mode !== "account")) ||
     tab === "url";
 
   async function handlePdfUpload(file: File) {
@@ -204,14 +215,29 @@ export function CreatePackPanel() {
         setError("Please upload a PDF document first.");
         return;
       }
+      if (tab === "scan" && (!scanDocId || scanText.trim().length < 80)) {
+        setError("Please extract and review at least 80 characters of notes from your scans.");
+        return;
+      }
       setLoading(true);
       setError("");
       setWarning("");
 
       try {
-        const rawSource = tab === "pdf" ? pdfDoc!.textPreview : source.trim();
-        const sourceLabel = tab === "pdf" ? `PDF: ${pdfDoc!.fileName}` : "Pasted Notes";
-        const sourceType = tab === "pdf" ? "pdf" : "text";
+        const rawSource =
+          tab === "pdf"
+            ? pdfDoc!.textPreview
+            : tab === "scan"
+            ? scanText.trim()
+            : source.trim();
+        const sourceLabel =
+          tab === "pdf"
+            ? `PDF: ${pdfDoc!.fileName}`
+            : tab === "scan"
+            ? "Scanned Notes"
+            : "Pasted Notes";
+        const sourceType =
+          tab === "pdf" ? "pdf" : tab === "scan" ? "scan" : "text";
 
         const response = await fetch("/api/generate/job", {
           method: "POST",
@@ -615,6 +641,29 @@ export function CreatePackPanel() {
                   }}
                 />
               </label>
+            )}
+          </div>
+        )}
+
+        {tab === "scan" && (
+          <div className="mt-5">
+            {mode !== "account" ? (
+              <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
+                <Camera size={38} className="text-[var(--text-tertiary)]" />
+                <span className="mt-3 font-extrabold text-[var(--text-primary)]">
+                  Account required for scanned notes
+                </span>
+                <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
+                  Sign in with an account to upload or photograph your study notes and transcribe them with AI.
+                </span>
+              </div>
+            ) : (
+              <PaperScanIntake
+                onExtractionReady={(docId, text) => {
+                  setScanDocId(docId || null);
+                  setScanText(text);
+                }}
+              />
             )}
           </div>
         )}
