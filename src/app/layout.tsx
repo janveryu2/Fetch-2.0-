@@ -23,7 +23,17 @@ export const metadata: Metadata = {
   },
   description:
     "Turn study notes into focused practice, plan your study time, and track your local learning history.",
-  icons: { icon: "/assets/mascot/fetch-logo.png" },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/assets/mascot/fetch-logo.png", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
