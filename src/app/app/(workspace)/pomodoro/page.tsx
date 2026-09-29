@@ -10,6 +10,11 @@ import {
   BellSlash,
   SpeakerSimpleHigh,
   SpeakerSimpleSlash,
+  SkipForward,
+  Target,
+  Gear,
+  Stack,
+  CheckCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { useTimer } from "@/components/tools/timer-provider";
@@ -43,25 +48,29 @@ export default function PomodoroPage() {
     () => "default"
   );
   const notifPermission = overridePermission ?? clientPermission;
+  const totalSeconds = timer.durations[timer.mode] * 60;
+  const progressPercent = Math.min(100, Math.max(0, (totalSeconds - timer.remaining) / totalSeconds * 100));
+  const selectedPack = packs.find((pack) => pack.id === timer.packId);
   return (
-    <div className="workspace">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="workspace workspace--wide pomodoro-refresh">
+      <div className="pomodoro-hero flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="page-title">A little time. A little focus.</h1>
+          <h1 className="page-title">Focus today. <span>Brighter tomorrow.</span></h1>
           <p className="page-description">
-            Give one thing your attention. The rest can wait.
+            Small steps, big progress. Stay focused, take breaks, and keep going!
           </p>
         </div>
-        <Button variant="secondary" asChild>
+        <Image src="/assets/illustrations/fetch-study-companion.png" alt="" width={300} height={200} className="pomodoro-hero-mascot" />
+        <Button variant="secondary" asChild className="relative z-10">
           <Link href="/app/music">
             <MusicNotes />
             Music Studio
           </Link>
         </Button>
       </div>
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <section className="surface-card p-6 text-center sm:p-10">
-          <div className="segment mx-auto w-fit">
+      <div className="mt-5 grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="surface-card pomodoro-stage p-6 text-center sm:p-8">
+          <div className="segment pomodoro-modes mx-auto w-fit">
             {(["Focus", "Short break", "Long break"] as TimerMode[]).map(
               (m) => (
                 <button
@@ -75,29 +84,32 @@ export default function PomodoroPage() {
               ),
             )}
           </div>
-          <div className="py-10">
+          <div className="pomodoro-dial my-8 mx-auto" style={{ background: "conic-gradient(var(--fetch-blue-600) " + progressPercent + "%, var(--fetch-blue-100) 0)" }}>
+            <div className="pomodoro-dial-inner">
             <p className="text-sm font-bold text-[var(--text-secondary)]">
               {timer.completed
                 ? "Well done. Take a moment for yourself."
                 : timer.endAt
-                  ? "You’re making time for learning."
-                  : "Settle in. Start when you’re ready."}
+                  ? "Focus session"
+                  : timer.mode + " session"}
             </p>
             <p
               role="timer"
               aria-label={`${timer.mode}: ${timerText(timer.remaining)} remaining`}
-              className="tabular mt-4 font-display text-[clamp(4rem,10vw,7rem)] font-medium leading-none"
+              className="tabular mt-4 font-display text-[clamp(3.5rem,9vw,6.5rem)] font-semibold leading-none"
             >
               {timerText(timer.remaining)}
             </p>
             <progress
               aria-label="Session progress"
-              className="mt-8 h-2 w-full max-w-72 accent-[var(--action-bg)]"
-              max={timer.durations[timer.mode] * 60}
-              value={timer.durations[timer.mode] * 60 - timer.remaining}
+              className="sr-only"
+              max={totalSeconds}
+              value={totalSeconds - timer.remaining}
             />
+            <p className="mt-4 text-sm text-[var(--text-secondary)]">{timer.completed ? "Nicely done!" : timer.endAt ? "Stay focused! 💙" : "Ready when you are"}</p>
             <div role="status" aria-live="polite" className="sr-only">
               {timer.completed ? `${timer.mode} session completed.` : ""}
+            </div>
             </div>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
@@ -137,16 +149,17 @@ export default function PomodoroPage() {
               <ArrowCounterClockwise />
               Reset
             </Button>
+            <Button variant="secondary" disabled={!ready} onClick={() => resetTimer(timer.mode === "Focus" ? "Short break" : "Focus")}>
+              <SkipForward /> Skip
+            </Button>
           </div>
           <p className="mt-6 text-xs text-[var(--text-secondary)]">
             Your timer continues across workspace pages and refreshes.
           </p>
         </section>
         <aside className="space-y-5">
-          <section className="surface-card p-5">
-            <h2 className="font-display text-xl font-semibold">
-              Make it your rhythm
-            </h2>
+          <section className="surface-card pomodoro-settings p-5">
+            <h2 className="font-display flex items-center gap-2 text-xl font-semibold"><Gear size={21} /> Timer Settings</h2>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">
               Changing the active duration resets that session.
             </p>
@@ -179,7 +192,7 @@ export default function PomodoroPage() {
               )}
             </div>
             <label className="field-label mt-5">
-              StudyPack context
+              <span className="flex items-center gap-2"><Stack size={18} /> StudyPack context</span>
               <select
                 className="field"
                 value={timer.packId}
@@ -204,7 +217,7 @@ export default function PomodoroPage() {
               </Link>
             )}
           </section>
-          <section className="surface-card p-5">
+          <section className="surface-card pomodoro-settings p-5">
             <h2 className="font-display text-xl font-semibold">
               Alerts & notifications
             </h2>
@@ -273,20 +286,12 @@ export default function PomodoroPage() {
               </div>
             </div>
           </section>
-          <div className="flex items-center gap-3">
-            <Image
-              src="/assets/mascot/fetch-seated.png"
-              alt=""
-              width={72}
-              height={72}
-              className="pixel-art"
-            />
-            <p className="text-sm text-[var(--text-secondary)]">
-              Timer sessions don’t count as completed quizzes. Your study
-              history stays accurate.
-            </p>
-          </div>
         </aside>
+      </div>
+      <div className="pomodoro-stats mt-5 grid gap-4 sm:grid-cols-3">
+        <div className="surface-card flex items-center gap-4 p-5"><span className="pomodoro-stat-icon"><Target size={24} /></span><div><h3 className="font-bold">Session length</h3><p className="font-display text-xl">{timer.durations[timer.mode]} minutes</p></div></div>
+        <div className="surface-card flex items-center gap-4 p-5"><span className="pomodoro-stat-icon is-warm"><CheckCircle size={24} /></span><div><h3 className="font-bold">Current session</h3><p className="text-sm text-[var(--text-secondary)]">{timer.completed ? "Completed" : timer.endAt ? "In progress" : "Ready to start"}</p></div></div>
+        <div className="surface-card flex items-center gap-4 p-5"><span className="pomodoro-stat-icon is-green"><Stack size={24} /></span><div><h3 className="font-bold">StudyPack context</h3><p className="truncate text-sm text-[var(--text-secondary)]">{selectedPack?.title ?? "Independent focus"}</p></div></div>
       </div>
     </div>
   );

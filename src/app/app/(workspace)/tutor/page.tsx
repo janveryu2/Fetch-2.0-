@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useDemo } from "@/components/app/demo-provider";
 import { useStudentPreferences } from "@/components/app/student-preferences-provider";
 import { SafeMarkdown } from "@/components/study/safe-markdown";
+import { TutorMessageSkeleton, StreamingIndicator } from "@/components/ui/domain-skeletons";
 import { cn } from "@/lib/cn";
 
 type TutorMessage = { role: "user" | "assistant"; content: string };
@@ -399,10 +400,14 @@ export default function TutorPage() {
                 <SafeMarkdown content={streamedReply} />
               </article>
             )}
-            {loading && (
-              <p role="status" className="text-sm text-[var(--text-secondary)] animate-pulse">
-                FETCH is thinking…
-              </p>
+            {loading && !streamedReply && (
+              <TutorMessageSkeleton />
+            )}
+            {loading && !!streamedReply && (
+              <div className="flex items-center gap-2 px-1 text-xs text-[var(--fetch-blue-700)]">
+                <StreamingIndicator />
+                <span>FETCH is typing…</span>
+              </div>
             )}
           </div>
         )}

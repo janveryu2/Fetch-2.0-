@@ -208,5 +208,36 @@ const a = 1;
       expect(container.textContent).toContain("Paragraph 2");
       expect(container.textContent).toContain("Paragraph 3");
     });
+
+    it("renders valid markdown tables as semantic HTML tables", () => {
+      const tableMarkdown = `
+| Section | Key Points |
+|---------|------------|
+| Intro   | First point |
+| Outro   | Last point  |
+`;
+      const { container } = render(React.createElement(SafeMarkdown, { content: tableMarkdown }));
+
+      const table = container.querySelector("table");
+      expect(table).not.toBeNull();
+      const headers = container.querySelectorAll("th");
+      expect(headers).toHaveLength(2);
+      expect(headers[0].textContent).toBe("Section");
+      expect(headers[1].textContent).toBe("Key Points");
+      const cells = container.querySelectorAll("td");
+      expect(cells).toHaveLength(4);
+      expect(cells[0].textContent).toBe("Intro");
+      expect(cells[1].textContent).toBe("First point");
+    });
+
+    it("converts malformed pseudo-tables into structured card elements without naked pipes", () => {
+      const pseudoTable = "| Concept | Detailed explanation without delimiter row |";
+      const { container } = render(React.createElement(SafeMarkdown, { content: pseudoTable }));
+
+      expect(container.querySelector("table")).toBeNull();
+      expect(container.querySelector("strong")?.textContent).toBe("Concept");
+      expect(container.textContent).toContain("Detailed explanation without delimiter row");
+      expect(container.textContent).not.toContain("|");
+    });
   });
 });

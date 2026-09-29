@@ -1,24 +1,20 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarBlank,
   ChartLineUp,
   ChatCircleDots,
-  Gear,
   Handshake,
   House,
-  Moon,
-  Plus,
-  SignOut,
   Stack,
-  Sun,
   Trophy,
-  GameController,
   DotsThreeCircle,
   Sparkle,
   Timer,
   MusicNotes,
+  CaretRight,
   X,
 } from "@phosphor-icons/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -29,6 +25,7 @@ import { useDemo } from "./demo-provider";
 import { resolveStudyDestination } from "@/lib/study-destination";
 import { getActiveDraftSnapshot } from "@/lib/study-session-draft";
 import { cn } from "@/lib/cn";
+import { ActiveGenerationIndicator } from "@/components/study/active-generation-indicator";
 
 function subscribeToStorage(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -67,6 +64,17 @@ const groups = [
     ],
   },
 ];
+const navArtwork: Record<string, [number, number]> = {
+  Home: [2, 0], StudyPacks: [3, 0], Progress: [0, 1], Calendar: [1, 1],
+  "FETCH AI Tutor": [2, 1], "Pomodoro Timer": [3, 1], "Music Studio": [0, 2],
+  Live: [1, 2], Friends: [2, 2], Messages: [3, 2], Settings: [0, 3],
+  "Dark theme": [1, 3], "Sign out": [2, 3], "Start studying": [0, 0], "Add material": [1, 0],
+};
+
+function NavArtwork({ name }: { name: string }) {
+  const [column, row] = navArtwork[name] ?? [2, 0];
+  return <span className="fetch-nav-art" aria-hidden="true" style={{ backgroundPosition: (-4 - column * 49) + "px " + (-19 - row * 51) + "px" }} />;
+}
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -134,10 +142,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <>
       {groups.map((group) => (
         <div key={group.name} className="mt-5">
-          <p className="mb-1 px-3 text-[11px] font-extrabold uppercase tracking-widest text-[var(--text-tertiary)]">
+          <p className="fetch-nav-heading mb-2 px-2 text-[11px] font-extrabold uppercase tracking-widest text-[var(--text-tertiary)]">
             {group.name}
           </p>
-          {group.items.map(({ href, label, icon: Icon }) => {
+          {group.items.map(({ href, label }) => {
             const active = pathname === href || pathname.startsWith(href + "/");
             return (
               <Link
@@ -146,75 +154,80 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setOpen(false)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold no-underline transition-colors",
+                  "fetch-nav-link flex min-h-[50px] items-center gap-2.5 rounded-xl px-2 text-sm font-bold no-underline transition-colors",
                   active
                     ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-800)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]",
                 )}
               >
-                <Icon size={21} weight={active ? "fill" : "regular"} />
-                {label}
-                {active && (
-                  <span className="ml-auto size-1.5 rounded-full bg-current" />
-                )}
+                <NavArtwork name={label} />
+                <span className="min-w-0 flex-1">{label}</span>
+                <CaretRight size={15} weight="bold" className="opacity-60" />
               </Link>
             );
           })}
         </div>
       ))}
-      <div className="mt-5 border-t border-[var(--border-subtle)] pt-3">
+    </>
+  );
+  const accountActions = (
+      <div className="fetch-account-actions mt-4 border-t border-[var(--border-subtle)] pt-2">
         <Link
           href="/app/settings"
           aria-current={pathname === "/app/settings" ? "page" : undefined}
           onClick={() => setOpen(false)}
           className={cn(
-            "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold",
+            "fetch-nav-link flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-bold",
             pathname === "/app/settings" &&
               "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-800)]",
           )}
         >
-          <Gear size={21} />
-          Settings
+          <NavArtwork name="Settings" /> Settings <CaretRight size={15} className="ml-auto opacity-60" />
         </Link>
         <button
           onClick={toggleTheme}
-          className="flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 text-sm font-bold"
+          role="switch"
+          aria-checked={dark}
+          className="fetch-nav-link flex min-h-11 w-full cursor-pointer items-center gap-2 px-1 text-sm font-bold"
         >
-          {dark ? <Sun size={21} /> : <Moon size={21} />}{" "}
-          {dark ? "Light theme" : "Dark theme"}
+          <NavArtwork name="Dark theme" />
+          <span>{dark ? "Light theme" : "Dark theme"}</span>
+          <span className={cn("fetch-theme-switch ml-auto", dark && "is-on")} aria-hidden="true" />
         </button>
         <button
           type="button"
           disabled={signingOut}
           onClick={() => void signOut()}
-          className="flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 text-left text-sm text-[var(--text-secondary)] disabled:opacity-60"
+          className="fetch-nav-link flex min-h-11 w-full cursor-pointer items-center gap-2 border-t border-[var(--border-subtle)] px-1 text-left text-sm text-[var(--text-secondary)] disabled:opacity-60"
         >
-          <SignOut size={21} />
+          <NavArtwork name="Sign out" />
           {signingOut ? "Signing out…" : mode === "account" ? "Sign out" : "Exit demo"}
+          <CaretRight size={15} className="ml-auto opacity-60" />
         </button>
       </div>
-    </>
   );
   return (
-    <div className="min-h-[100dvh] lg:pl-[248px]">
+    <div className="min-h-[100dvh] lg:pl-[270px]">
       <a href="#app-main" className="skip-link">
         Skip to workspace
       </a>
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-5 lg:flex">
-        <FetchBrand />
+      <aside className="fetch-sidebar fixed inset-y-0 left-0 z-40 hidden w-[270px] flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-4 lg:flex">
+        <div className="fetch-sidebar-brand"><FetchBrand /></div>
         <Link
           href={studyDestination.href}
-          className="mt-6 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--action-bg)] text-sm font-extrabold text-[var(--action-text)]"
+          className="fetch-sidebar-primary mt-3 flex min-h-[52px] items-center gap-2 rounded-xl bg-[var(--action-bg)] px-3 text-sm font-extrabold text-[var(--action-text)]"
         >
-          <GameController size={21} />
+          <NavArtwork name="Start studying" />
           {studyDestination.label}
+          <CaretRight size={18} className="ml-auto" />
         </Link>
         <Link
           href="/app/home#add-material"
-          className="mt-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--border-strong)] text-sm font-bold"
+          className="fetch-sidebar-add mt-2 flex min-h-[52px] items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-sm font-bold"
         >
-          <Plus size={18} />
+          <NavArtwork name="Add material" />
           Add material
+          <CaretRight size={18} className="ml-auto opacity-60" />
         </Link>
         <nav
           aria-label="App navigation"
@@ -222,11 +235,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {navigation}
         </nav>
-        <div className="border-t border-[var(--border-subtle)] pt-3 text-xs text-[var(--text-secondary)]">
-          <div className="flex items-center justify-between">
+        <div className="fetch-account-card border border-[var(--border-subtle)] p-3 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center justify-between gap-2">
+            <Image src="/assets/mascot/fetch-logo.png" alt="" width={40} height={40} className="size-10 shrink-0 rounded-xl" />
+            <div className="min-w-0 flex-1">
             <strong className="text-[var(--text-primary)]">
               {mode === "account" ? "Your account" : "Local demo"}
             </strong>
+            <p className="truncate">
+              {mode === "account"
+                ? status === "loading" ? "Checking account sync…" : status === "error" ? "Sync error" : "Synced to your account"
+                : storageWarning ? "Storage warning" : "Saved in this browser"}
+            </p></div>
             {status === "error" && mode === "account" && (
               <button
                 type="button"
@@ -237,17 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             )}
           </div>
-          <p className="mt-0.5">
-            {mode === "account"
-              ? status === "loading"
-                ? "Checking account sync…"
-                : status === "error"
-                  ? "Sync error · Cloud data unavailable"
-                  : "Synced to your account"
-              : storageWarning
-                ? "Storage warning · Working in memory"
-                : "Saved in this browser"}
-          </p>
+          {accountActions}
         </div>
       </aside>
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 lg:hidden">
@@ -272,6 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
         {children}
+        <ActiveGenerationIndicator />
       </main>
       <nav
         aria-label="Mobile navigation"
@@ -314,7 +325,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Dialog.Description className="text-sm text-[var(--text-secondary)]">
                 Study tools, community, and settings.
               </Dialog.Description>
-              <nav aria-label="All destinations">{navigation}</nav>
+              <nav aria-label="All destinations">{navigation}{accountActions}</nav>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>

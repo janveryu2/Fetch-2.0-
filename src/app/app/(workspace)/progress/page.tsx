@@ -11,6 +11,7 @@ import {
 import { useDemo } from "@/components/app/demo-provider";
 import { useStudentPreferences } from "@/components/app/student-preferences-provider";
 import { Button } from "@/components/ui/button";
+import { ProgressChartSkeleton } from "@/components/ui/domain-skeletons";
 import { getStudyRecommendation } from "@/lib/study-recommendation";
 import { getActiveDraftSnapshot } from "@/lib/study-session-draft";
 import { addDays, localDate, studyStreak } from "@/lib/study-stats";
@@ -71,10 +72,8 @@ export default function ProgressPage() {
       </div>
 
       {status === "loading" ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-2xl bg-[var(--surface-subtle)] p-12 text-center">
-          <p className="text-sm font-semibold text-[var(--text-secondary)]" role="status">
-            Loading your progress…
-          </p>
+        <div className="mt-8 space-y-4" role="status" aria-label="Loading your progress">
+          <ProgressChartSkeleton />
         </div>
       ) : attempts.length === 0 ? (
         <section className="mt-7 flex flex-col items-center gap-6 rounded-2xl bg-[var(--surface-subtle)] p-7 text-center sm:flex-row sm:text-left">

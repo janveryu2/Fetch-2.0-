@@ -16,7 +16,9 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useDemo } from "@/components/app/demo-provider";
+import { FriendRowSkeleton } from "@/components/ui/domain-skeletons";
 
 interface FriendUser {
   id: string;
@@ -248,15 +250,23 @@ export default function FriendsPage() {
                 key={req.requestId}
                 className="flex items-center justify-between py-3 gap-3"
               >
-                <div>
-                  <p className="font-bold text-[var(--fetch-blue-950)]">
-                    {req.displayName}
-                  </p>
-                  {req.username && (
-                    <p className="text-xs text-[var(--fetch-blue-700)]">
-                      @{req.username}
+                <div className="flex items-center gap-3">
+                  <UserAvatar
+                    src={req.avatarUrl}
+                    alt={req.displayName}
+                    size={36}
+                    className="size-9 rounded-xl"
+                  />
+                  <div>
+                    <p className="font-bold text-[var(--fetch-blue-950)]">
+                      {req.displayName}
                     </p>
-                  )}
+                    {req.username && (
+                      <p className="text-xs text-[var(--fetch-blue-700)]">
+                        @{req.username}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -316,13 +326,30 @@ export default function FriendsPage() {
                     key={user.id}
                     className="flex items-center justify-between py-3 gap-3"
                   >
-                    <div>
-                      <p className="font-bold">{user.displayName}</p>
-                      {user.username && (
-                        <p className="text-xs text-[var(--text-secondary)]">
-                          @{user.username}
-                        </p>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        src={user.avatarUrl}
+                        alt={user.displayName}
+                        size={36}
+                        className="size-9 rounded-xl"
+                      />
+                      <div>
+                        {user.username ? (
+                          <Link
+                            href={`/app/u/${user.username}`}
+                            className="font-bold hover:underline hover:text-[var(--fetch-blue-700)]"
+                          >
+                            {user.displayName}
+                          </Link>
+                        ) : (
+                          <p className="font-bold">{user.displayName}</p>
+                        )}
+                        {user.username && (
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            @{user.username}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div>
                       {user.friendshipStatus === "friend" ? (
@@ -361,9 +388,11 @@ export default function FriendsPage() {
             </div>
 
             {loading ? (
-              <p className="py-8 text-center text-sm text-[var(--text-secondary)]">
-                Loading friends…
-              </p>
+              <div className="space-y-3 py-2" role="status" aria-label="Loading friends">
+                <FriendRowSkeleton />
+                <FriendRowSkeleton />
+                <FriendRowSkeleton />
+              </div>
             ) : friends.length === 0 ? (
               <div className="py-7 text-center">
                 <Image
@@ -389,22 +418,30 @@ export default function FriendsPage() {
                     key={friend.id}
                     className="flex items-center justify-between py-4 gap-4"
                   >
-                    <div>
-                      {friend.username ? (
-                        <Link
-                          href={`/app/u/${friend.username}`}
-                          className="font-bold text-base hover:text-[var(--fetch-blue-700)] hover:underline inline-block"
-                        >
-                          {friend.displayName}
-                        </Link>
-                      ) : (
-                        <h4 className="font-bold text-base">{friend.displayName}</h4>
-                      )}
-                      {friend.username && (
-                        <p className="text-xs text-[var(--text-secondary)]">
-                          @{friend.username}
-                        </p>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        src={friend.avatarUrl}
+                        alt={friend.displayName}
+                        size={40}
+                        className="size-10 rounded-xl"
+                      />
+                      <div>
+                        {friend.username ? (
+                          <Link
+                            href={`/app/u/${friend.username}`}
+                            className="font-bold text-base hover:text-[var(--fetch-blue-700)] hover:underline inline-block"
+                          >
+                            {friend.displayName}
+                          </Link>
+                        ) : (
+                          <h4 className="font-bold text-base">{friend.displayName}</h4>
+                        )}
+                        {friend.username && (
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            @{friend.username}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <Button
                       size="sm"
@@ -433,13 +470,21 @@ export default function FriendsPage() {
                     key={req.requestId}
                     className="flex items-center justify-between py-3 gap-3"
                   >
-                    <div>
-                      <p className="font-bold">{req.displayName}</p>
-                      {req.username && (
-                        <p className="text-xs text-[var(--text-secondary)]">
-                          @{req.username}
-                        </p>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        src={req.avatarUrl}
+                        alt={req.displayName}
+                        size={36}
+                        className="size-9 rounded-xl"
+                      />
+                      <div>
+                        <p className="font-bold">{req.displayName}</p>
+                        {req.username && (
+                          <p className="text-xs text-[var(--text-secondary)]">
+                            @{req.username}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <Button
                       size="sm"

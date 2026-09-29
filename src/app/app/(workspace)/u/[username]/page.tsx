@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 interface FriendProfileData {
   id: string;
@@ -149,18 +149,12 @@ export default function UserProfilePage({ params }: PageProps) {
           <div className="px-6 pb-6 pt-0">
             {/* Avatar & Action Button Bar */}
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 -mt-12 mb-4">
-              <div className="relative h-24 w-24 rounded-2xl border-4 border-[var(--surface-canvas)] bg-[var(--surface-subtle)] overflow-hidden shadow-md flex items-center justify-center font-display text-2xl font-bold text-[var(--fetch-blue-700)]">
-                {profile.avatarUrl ? (
-                  <Image
-                    src={profile.avatarUrl}
-                    alt={profile.displayName}
-                    fill
-                    className="object-cover"
-                  />
-                ) : (
-                  profile.displayName.slice(0, 2).toUpperCase()
-                )}
-              </div>
+              <UserAvatar
+                src={profile.avatarUrl}
+                alt={profile.displayName}
+                size={96}
+                className="h-24 w-24 rounded-2xl border-4 border-[var(--surface-canvas)] shadow-md"
+              />
 
               <div className="flex items-center gap-2.5">
                 {profile.canMessage && (

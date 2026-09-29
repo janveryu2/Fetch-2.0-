@@ -11,8 +11,10 @@ import {
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useDemo } from "@/components/app/demo-provider";
 import { createClient } from "@/lib/supabase/client";
+import { MessageThreadSkeleton } from "@/components/ui/domain-skeletons";
 
 interface Participant {
   id: string;
@@ -378,9 +380,12 @@ export default function MessagesPage() {
                           : "hover:bg-[var(--surface-subtle)]"
                       }`}
                     >
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-700)] font-bold text-sm">
-                        {c.participant.displayName[0]?.toUpperCase() || "B"}
-                      </div>
+                      <UserAvatar
+                        src={c.participant.avatarUrl}
+                        alt={c.participant.displayName}
+                        size={40}
+                        className="size-10 rounded-xl"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between">
                           <span className="block truncate font-extrabold text-sm">
@@ -454,10 +459,19 @@ export default function MessagesPage() {
         <section className="flex min-h-0 flex-1 flex-col">
           <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 sm:px-5">
             <div className="flex items-center gap-3 min-w-0">
-              <ChatCircleDots
-                size={24}
-                className="shrink-0 text-[var(--fetch-blue-600)]"
-              />
+              {mode === "account" && activeConversation?.participant ? (
+                <UserAvatar
+                  src={activeConversation.participant.avatarUrl}
+                  alt={activeConversation.participant.displayName}
+                  size={36}
+                  className="size-9 rounded-xl"
+                />
+              ) : (
+                <ChatCircleDots
+                  size={24}
+                  className="shrink-0 text-[var(--fetch-blue-600)]"
+                />
+              )}
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="font-extrabold text-sm sm:text-base truncate">
@@ -492,7 +506,9 @@ export default function MessagesPage() {
 
           {/* Scrollable Message Area */}
           <div className="flex flex-1 flex-col justify-end gap-3 overflow-y-auto p-4 sm:p-5">
-            {mode === "account" ? (
+            {loading && mode === "account" ? (
+              <MessageThreadSkeleton />
+            ) : mode === "account" ? (
               !activeConversation ? (
                 <div className="my-auto text-center px-4 py-6">
                   <Image

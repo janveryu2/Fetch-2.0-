@@ -23,7 +23,9 @@ export type ApiErrorCode =
   | "INVALID_PREFERENCES"
   | "STUDY_PREFERENCES_UNAVAILABLE"
   | "STUDY_PREFERENCES_SAVE_FAILED"
-  | "INVALID_STUDY_PREFERENCES";
+  | "INVALID_STUDY_PREFERENCES"
+  | "DOCUMENT_NOT_FOUND"
+  | "EXTRACTION_FAILED";
 
 export interface ApiErrorResponse {
   error: string;

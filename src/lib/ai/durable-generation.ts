@@ -7,10 +7,12 @@ import {
 } from "./gemini-study-pack";
 import {
   atomicFinalizeGenerationJobServer,
-  claimGenerationBatchServer,
   checkpointGenerationBatchServer,
   getGenerationJobForRunnerServer,
-  getPrivilegedSupabaseClient,
+  releaseGenerationJobServer,
+  claimGenerationStepServer,
+  heartbeatGenerationJobServer,
+  recordGenerationRetryServer,
 } from "@/lib/server/privileged-supabase";
 
 export interface BatchPlan {
@@ -86,23 +88,47 @@ export function chunkSourceText(source: string, targetChunks: number): string[] 
   }
 
   // Attempt paragraph-based splitting
-  const paragraphs = cleaned.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
-  if (paragraphs.length <= targetChunks) {
-    return paragraphs.length > 0 ? paragraphs : [cleaned];
+  const initialParagraphs = cleaned.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
+  
+  // If paragraphs are too large or fewer than target chunks, break long paragraphs at sentence boundaries
+  const expandedSections: string[] = [];
+  for (const para of initialParagraphs) {
+    if (para.length > 1500) {
+      const sentences = para.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+      let curSec = "";
+      for (const sent of sentences) {
+        if (curSec.length + sent.length > 1200 && curSec.length > 0) {
+          expandedSections.push(curSec.trim());
+          curSec = sent;
+        } else {
+          curSec += (curSec ? " " : "") + sent;
+        }
+      }
+      if (curSec.trim()) {
+        expandedSections.push(curSec.trim());
+      }
+    } else {
+      expandedSections.push(para);
+    }
+  }
+
+  const sections = expandedSections.length > 0 ? expandedSections : initialParagraphs;
+  if (sections.length <= targetChunks) {
+    return sections.length > 0 ? sections : [cleaned];
   }
 
   const chunks: string[] = [];
   const charsPerChunk = Math.ceil(cleaned.length / targetChunks);
   let currentChunk = "";
 
-  for (const para of paragraphs) {
-    if (currentChunk.length + para.length > charsPerChunk && chunks.length < targetChunks - 1) {
+  for (const sec of sections) {
+    if (currentChunk.length + sec.length > charsPerChunk && chunks.length < targetChunks - 1) {
       if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
       }
-      currentChunk = para;
+      currentChunk = sec;
     } else {
-      currentChunk += (currentChunk ? "\n\n" : "") + para;
+      currentChunk += (currentChunk ? "\n\n" : "") + sec;
     }
   }
 
@@ -127,6 +153,43 @@ export function planBatches(requestedCount: number, source: string): BatchPlan[]
 
   for (let i = 0; i < numBatches; i++) {
     const allocated = Math.min(maxBatchSize, Math.ceil(remaining / (numBatches - i)));
+    remaining -= allocated;
+    const chunk = chunks[i % chunks.length] || source;
+
+    batches.push({
+      batchNumber: i + 1,
+      allocatedCount: allocated,
+      sourceChunk: chunk,
+    });
+  }
+
+  return batches;
+}
+
+/**
+ * Plans flashcard batches: single-call generation for up to 20 cards,
+ * 2 calls for 21-40 cards, 3 calls for 41-50 cards.
+ * Can be reverted to legacy 10-item batching via FETCH_FLASHCARD_BATCH_V2="false".
+ */
+export function planFlashcardBatches(requestedCount: number, source: string): BatchPlan[] {
+  if (process.env.FETCH_FLASHCARD_BATCH_V2 === "false") {
+    return planBatches(requestedCount, source);
+  }
+
+  const boundedCount = Math.max(3, Math.min(50, requestedCount));
+  let numBatches = 1;
+  if (boundedCount > 40) {
+    numBatches = 3;
+  } else if (boundedCount > 20) {
+    numBatches = 2;
+  }
+
+  const chunks = chunkSourceText(source, numBatches);
+  const batches: BatchPlan[] = [];
+  let remaining = boundedCount;
+
+  for (let i = 0; i < numBatches; i++) {
+    const allocated = Math.ceil(remaining / (numBatches - i));
     remaining -= allocated;
     const chunk = chunks[i % chunks.length] || source;
 
@@ -331,6 +394,7 @@ CRITICAL RULES:
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
@@ -355,7 +419,7 @@ CRITICAL RULES:
               },
               required: ["flashcards"],
             },
-            maxOutputTokens: 8192,
+            maxOutputTokens: Math.max(1024, Math.min(8192, (params.count || 10) * 150)),
           },
         }),
       });
@@ -394,17 +458,12 @@ CRITICAL RULES:
 /**
  * Generates structured summary with Gemini matching structuredSummarySchema
  */
-export async function generateSummaryWithGemini(params: {
-  title: string;
-  source: string;
-}): Promise<StructuredSummary> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured.");
-  }
-  const model = process.env.GEMINI_STUDYPACK_MODEL || "gemini-3.7-flash";
-  const candidateModels = [model, ...(model === "gemini-3.7-flash" ? ["gemini-2.5-flash"] : [])];
-
+async function generateSingleSummaryCall(
+  title: string,
+  source: string,
+  apiKey: string,
+  candidateModels: string[]
+): Promise<StructuredSummary> {
   const systemPrompt = `You generate structured, high-yield study summaries from ONLY the supplied source text.
 Return a structured JSON object matching this schema:
 - overview: 2-4 sentence executive overview of the study text (min 10 chars).
@@ -416,7 +475,7 @@ Return a structured JSON object matching this schema:
 
 CRITICAL: Rely strictly on facts in the source.`;
 
-  const userPrompt = `SOURCE TITLE: ${params.title}\n\nSOURCE MATERIAL:\n---\n${params.source}\n---`;
+  const userPrompt = `SOURCE TITLE: ${title}\n\nSOURCE MATERIAL:\n---\n${source}\n---`;
 
   let lastError: Error | null = null;
   for (const m of candidateModels) {
@@ -425,6 +484,7 @@ CRITICAL: Rely strictly on facts in the source.`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
@@ -457,103 +517,189 @@ CRITICAL: Rely strictly on facts in the source.`;
 }
 
 /**
- * Runs the durable generation workflow for a job
+ * Generates structured summary with Gemini matching structuredSummarySchema.
+ * For oversized sources (> 20,000 characters), executes a chunk-reduce strategy.
  */
-export async function runGenerationJob(jobId: string): Promise<{
+export async function generateSummaryWithGemini(params: {
+  title: string;
+  source: string;
+}): Promise<StructuredSummary> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+  const model = process.env.GEMINI_STUDYPACK_MODEL || "gemini-3.7-flash";
+  const candidateModels = [model, ...(model === "gemini-3.7-flash" ? ["gemini-2.5-flash"] : [])];
+
+  // For oversized inputs, execute chunk-reduce to prevent context truncation
+  if (params.source.length > 20000) {
+    const numChunks = Math.min(4, Math.ceil(params.source.length / 15000));
+    const chunks = chunkSourceText(params.source, numChunks);
+    const chunkExtracts: string[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkPrompt = `Summarize key definitions, principles, and concepts from section ${i + 1} of ${chunks.length} of "${params.title}":\n\n${chunks[i]}`;
+      for (const m of candidateModels) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${apiKey}`;
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(30_000),
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: chunkPrompt }] }],
+              generationConfig: { maxOutputTokens: 2048 },
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              chunkExtracts.push(`Section ${i + 1} Highlights:\n${text}`);
+              break;
+            }
+          }
+        } catch {
+          // Try candidate model
+        }
+      }
+    }
+
+    const reducedSource = chunkExtracts.length > 0
+      ? chunkExtracts.join("\n\n")
+      : params.source.slice(0, 20000);
+
+    return generateSingleSummaryCall(params.title, reducedSource, apiKey, candidateModels);
+  }
+
+  return generateSingleSummaryCall(params.title, params.source, apiKey, candidateModels);
+}
+
+/**
+ * Asynchronously pings the internal worker endpoint to begin/resume processing
+ * Supabase Cron sweep acts as the authoritative background recovery backstop
+ */
+export function dispatchGenerationWakeup(jobId: string) {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  const secret = process.env.FETCH_INTERNAL_WORKER_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  fetch(`${baseUrl}/api/internal/generation/step`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-fetch-worker-secret": secret,
+    },
+    body: JSON.stringify({ jobId }),
+  }).catch((err) => {
+    // Non-blocking best effort dispatch
+    if (process.env.NODE_ENV !== "test") {
+      console.warn(`[Generation Wakeup Notice]: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+}
+
+export interface ExecutionStepResult {
   success: boolean;
+  done?: boolean;
+  jobId?: string;
+  batchNumber?: number;
+  acceptedCount?: number;
   packId?: string;
   artifactId?: string;
+  reason?: string;
   error?: string;
-}> {
-  const privilegedClient = getPrivilegedSupabaseClient();
-  if (!privilegedClient) {
-    return { success: false, error: "Privileged Supabase client is not available." };
+}
+
+/**
+ * Executes a single bounded step of durable generation with atomic claim & fencing.
+ */
+export async function executeGenerationStep(params?: {
+  jobId?: string;
+  workerId?: string;
+}): Promise<ExecutionStepResult> {
+  const workerId =
+    params?.workerId ||
+    `worker-${process.pid || "srv"}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // 1. Claim eligible job/step with atomic monotonic fencing
+  const claimRes = await claimGenerationStepServer({
+    workerId,
+    jobId: params?.jobId,
+    leaseSeconds: 90,
+  });
+
+  if (!claimRes.data || !claimRes.data.success) {
+    return {
+      success: false,
+      reason: claimRes.data?.reason || claimRes.error?.message || "claim_failed",
+    };
   }
 
-  interface JobRunnerRecord {
-    id: string;
-    title: string;
-    artifact_kind: "quiz" | "flashcards" | "summary";
-    requested_count: number;
-    status: string;
-    cancel_requested?: boolean;
-    pack_id?: string;
-    artifact_id?: string;
-  }
-
-  // 1. Fetch job record and full source content via server RPC
-  const runnerRes = await getGenerationJobForRunnerServer({ jobId });
-  let job: JobRunnerRecord;
-  let sourceContent = "";
-
-  if (runnerRes.data?.job) {
-    job = runnerRes.data.job as unknown as JobRunnerRecord;
-    sourceContent = runnerRes.data.sourceContent || "";
-  } else {
-    const { data: jobRow, error: jobError } = await privilegedClient
-      .from("generation_jobs")
-      .select("*")
-      .eq("id", jobId)
-      .single();
-
-    if (jobError || !jobRow) {
-      return { success: false, error: "Job not found." };
-    }
-    job = jobRow;
-
-    const { data: inputRow } = await privilegedClient
-      .from("generation_job_inputs")
-      .select("source_content")
-      .eq("job_id", jobId)
-      .single();
-
-    sourceContent = inputRow?.source_content || "";
-  }
-
-  if (job.status === "completed") {
-    return { success: true, packId: job.pack_id, artifactId: job.artifact_id };
-  }
-
-  if (job.cancel_requested || job.status === "cancelled") {
-    return { success: false, error: "Job was cancelled by user." };
-  }
-
-  const workerId = `runner-${process.pid || "worker"}-${Date.now()}`;
+  const claim = claimRes.data;
+  const targetJobId = claim.jobId!;
+  const fencingToken = claim.fencingToken || 1;
+  let jobRecord: Record<string, unknown> | null = null;
 
   try {
-    // 2. Update stage: extracting
-    await privilegedClient
-      .from("generation_jobs")
-      .update({ stage: "extracting", updated_at: new Date().toISOString() })
-      .eq("id", jobId);
+    // 2. Read authoritative runner data (job, private source inputs, and existing batch checkpoints)
+    const runnerRes = await getGenerationJobForRunnerServer({ jobId: targetJobId });
+    if (!runnerRes.data) {
+      throw new Error(runnerRes.error?.message || "Failed to load runner data for claimed job.");
+    }
 
-    if (job.artifact_kind === "summary") {
+    jobRecord = runnerRes.data.job;
+    const { sourceContent, batches: existingBatches } = runnerRes.data;
+    const artifactKind = (jobRecord.artifact_kind as "quiz" | "flashcards" | "summary") || "quiz";
+    const requestedCount = Number(jobRecord.requested_count) || 10;
+    const title = String(jobRecord.title || "Study Pack");
+
+    // 3. Early cancellation check
+    if (jobRecord.cancel_requested || jobRecord.status === "cancelled") {
+      await releaseGenerationJobServer({
+        jobId: targetJobId,
+        cancelled: true,
+        failureCode: "USER_CANCELLED",
+        failureMessage: "Job cancelled by student",
+      });
+      return { success: false, reason: "cancelled", jobId: targetJobId };
+    }
+
+    // 4. Production guard: prevent fake fixture generation if API key is missing
+    if (!process.env.GEMINI_API_KEY && process.env.NODE_ENV === "production") {
+      await releaseGenerationJobServer({
+        jobId: targetJobId,
+        cancelled: false,
+        failureCode: "MISSING_PROVIDER_KEY",
+        failureMessage: "Gemini provider API key is not configured.",
+      });
+      return { success: false, error: "Missing Gemini provider key in production.", jobId: targetJobId };
+    }
+
+    // 5. Artifact-specific execution
+    if (artifactKind === "summary") {
       let summaryData: StructuredSummary;
-
       if (process.env.GEMINI_API_KEY) {
         try {
           summaryData = await generateSummaryWithGemini({
-            title: job.title,
+            title,
             source: sourceContent,
           });
         } catch (genErr) {
           if (process.env.NODE_ENV === "test") {
-            summaryData = createFixtureSummary(job.title, sourceContent);
+            summaryData = createFixtureSummary(title, sourceContent);
           } else {
             throw genErr;
           }
         }
       } else {
-        summaryData = createFixtureSummary(job.title, sourceContent);
+        summaryData = createFixtureSummary(title, sourceContent);
       }
 
-      await privilegedClient
-        .from("generation_jobs")
-        .update({ stage: "finalizing", updated_at: new Date().toISOString() })
-        .eq("id", jobId);
-
+      // Checkpoint and finalize summary atomically
       const finalizeResult = await atomicFinalizeGenerationJobServer({
-        jobId,
+        jobId: targetJobId,
         summary: summaryData,
       });
 
@@ -563,217 +709,407 @@ export async function runGenerationJob(jobId: string): Promise<{
 
       return {
         success: true,
+        done: true,
+        jobId: targetJobId,
         packId: finalizeResult.data.packId,
         artifactId: finalizeResult.data.artifactId,
       };
     }
 
-    if (job.artifact_kind === "flashcards") {
-      const batches = planBatches(job.requested_count, sourceContent);
-      const collectedCards: Array<{
-        front: string;
-        back: string;
-        aliases: string[];
-        sourceQuote: string;
-      }> = [];
+    if (artifactKind === "flashcards") {
+      const plannedBatches = planFlashcardBatches(requestedCount, sourceContent);
+      const completedBatchMap = new Map<
+        number,
+        Array<{ front: string; back: string; aliases: string[]; sourceQuote: string }>
+      >();
 
-      await privilegedClient
-        .from("generation_jobs")
-        .update({ stage: "batching", updated_at: new Date().toISOString() })
-        .eq("id", jobId);
-
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        await claimGenerationBatchServer({
-          jobId,
-          batchNumber: batch.batchNumber,
-          leaseOwner: workerId,
-          leaseSeconds: 90,
-        });
-
-        let cards: Array<{
-          front: string;
-          back: string;
-          aliases: string[];
-          sourceQuote: string;
-        }> = [];
-
-        if (process.env.GEMINI_API_KEY) {
-          try {
-            const rawCards = await generateFlashcardsWithGemini({
-              title: `${job.title} (Batch ${batch.batchNumber})`,
-              source: batch.sourceChunk,
-              count: batch.allocatedCount,
-            });
-            cards = rawCards.filter((c) => verifySourceGrounding(sourceContent, c.sourceQuote));
-          } catch (genErr) {
-            if (process.env.NODE_ENV === "test") {
-              cards = createFixtureBatchFlashcards(batch.sourceChunk, batch.allocatedCount, i);
-            } else {
-              throw genErr;
-            }
+      // Identify already completed batch checkpoints
+      if (Array.isArray(existingBatches)) {
+        for (const b of existingBatches as Array<{
+          batchNumber: number;
+          status: string;
+          acceptedQuestions?: unknown;
+        }>) {
+          if (b.status === "completed" && Array.isArray(b.acceptedQuestions)) {
+            completedBatchMap.set(
+              b.batchNumber,
+              b.acceptedQuestions as Array<{ front: string; back: string; aliases: string[]; sourceQuote: string }>
+            );
           }
-        } else {
-          cards = createFixtureBatchFlashcards(batch.sourceChunk, batch.allocatedCount, i);
+        }
+      }
+
+      // Find first incomplete batch
+      const nextBatchIndex = plannedBatches.findIndex((b) => !completedBatchMap.has(b.batchNumber));
+
+      if (nextBatchIndex === -1) {
+        // All batches already checkpointed! Finalize immediately.
+        const allCards: Array<{ front: string; back: string; aliases: string[]; sourceQuote: string }> = [];
+        for (const b of plannedBatches) {
+          const cards = completedBatchMap.get(b.batchNumber) || [];
+          allCards.push(...cards);
         }
 
-        collectedCards.push(...cards);
-
-        await checkpointGenerationBatchServer({
-          jobId,
-          batchNumber: batch.batchNumber,
-          acceptedItems: cards,
-          newAcceptedCount: collectedCards.length,
-          stage: i === batches.length - 1 ? "finalizing" : "batching",
+        const finalizeResult = await atomicFinalizeGenerationJobServer({
+          jobId: targetJobId,
+          flashcards: allCards,
         });
+
+        if (finalizeResult.error || !finalizeResult.data) {
+          throw new Error(finalizeResult.error?.message || "Failed to finalize flashcard job");
+        }
+
+        return {
+          success: true,
+          done: true,
+          jobId: targetJobId,
+          packId: finalizeResult.data.packId,
+          artifactId: finalizeResult.data.artifactId,
+          acceptedCount: allCards.length,
+        };
       }
 
-      const finalizeResult = await atomicFinalizeGenerationJobServer({
-        jobId,
-        flashcards: collectedCards,
-      });
+      // Process this incomplete batch
+      const currentBatch = plannedBatches[nextBatchIndex];
 
-      if (finalizeResult.error || !finalizeResult.data) {
-        throw new Error(finalizeResult.error?.message || "Failed to finalize flashcard job");
-      }
-
-      return {
-        success: true,
-        packId: finalizeResult.data.packId,
-        artifactId: finalizeResult.data.artifactId,
-      };
-    }
-
-    // Quiz generation (up to 50 questions)
-    const batches = planBatches(job.requested_count, sourceContent);
-    const collectedQuestions: GeneratedQuestion[] = [];
-
-    const checkCancel = async () => {
-      const { data: check } = await privilegedClient
-        .from("generation_jobs")
-        .select("cancel_requested, status")
-        .eq("id", jobId)
-        .single();
-      return Boolean(check?.cancel_requested || check?.status === "cancelled");
-    };
-
-    await privilegedClient
-      .from("generation_jobs")
-      .update({ stage: "batching", updated_at: new Date().toISOString() })
-      .eq("id", jobId);
-
-    for (let i = 0; i < batches.length; i++) {
-      if (await checkCancel()) {
-        await privilegedClient
-          .from("generation_jobs")
-          .update({
-            status: "cancelled",
-            stage: "cancelled",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", jobId);
-        return { success: false, error: "Job cancelled by user" };
-      }
-
-      const batch = batches[i];
-      await claimGenerationBatchServer({
-        jobId,
-        batchNumber: batch.batchNumber,
+      // Heartbeat before calling Gemini
+      await heartbeatGenerationJobServer({
+        jobId: targetJobId,
         leaseOwner: workerId,
-        leaseSeconds: 90,
+        fencingToken,
       });
 
-      let batchQuestions: GeneratedQuestion[] = [];
+      let cards: Array<{ front: string; back: string; aliases: string[]; sourceQuote: string }> = [];
 
       if (process.env.GEMINI_API_KEY) {
         try {
-          const provider = new GeminiStudyPackProvider();
-          const rawBatch = await provider.generate({
-            title: `${job.title} (Batch ${batch.batchNumber})`,
-            source: batch.sourceChunk,
-            count: batch.allocatedCount,
+          const rawCards = await generateFlashcardsWithGemini({
+            title: `${title} (Batch ${currentBatch.batchNumber})`,
+            source: currentBatch.sourceChunk,
+            count: currentBatch.allocatedCount,
           });
-
-          for (const q of rawBatch) {
-            if (
-              verifySourceGrounding(sourceContent, q.sourceQuote) &&
-              !isQuestionDuplicate(q, collectedQuestions)
-            ) {
-              batchQuestions.push(q);
-            }
-          }
+          cards = rawCards.filter((c) => verifySourceGrounding(sourceContent, c.sourceQuote));
         } catch (genErr) {
           if (process.env.NODE_ENV === "test") {
-            const fallback = createFixtureBatchQuestions(
-              batch.sourceChunk,
-              batch.allocatedCount,
-              i,
-              collectedQuestions
+            cards = createFixtureBatchFlashcards(
+              currentBatch.sourceChunk,
+              currentBatch.allocatedCount,
+              nextBatchIndex
             );
-            batchQuestions.push(...fallback);
           } else {
             throw genErr;
           }
         }
       } else {
-        batchQuestions = createFixtureBatchQuestions(
-          batch.sourceChunk,
-          batch.allocatedCount,
-          i,
-          collectedQuestions
+        cards = createFixtureBatchFlashcards(
+          currentBatch.sourceChunk,
+          currentBatch.allocatedCount,
+          nextBatchIndex
         );
       }
 
-      collectedQuestions.push(...batchQuestions);
+      const isLastBatch = nextBatchIndex === plannedBatches.length - 1;
 
-      await checkpointGenerationBatchServer({
-        jobId,
-        batchNumber: batch.batchNumber,
-        acceptedItems: batchQuestions,
-        newAcceptedCount: collectedQuestions.length,
-        stage: i === batches.length - 1 ? "finalizing" : "batching",
+      // Fenced checkpoint
+      const checkpointRes = await checkpointGenerationBatchServer({
+        jobId: targetJobId,
+        batchNumber: currentBatch.batchNumber,
+        acceptedItems: cards,
+        stage: isLastBatch ? "finalizing" : "batching",
+        leaseOwner: workerId,
+        fencingToken,
       });
+
+      if (!checkpointRes.data?.success) {
+        if (checkpointRes.data?.reason === "fenced") {
+          return { success: false, reason: "fenced", jobId: targetJobId };
+        }
+        throw new Error(checkpointRes.error?.message || "Failed to checkpoint batch");
+      }
+
+      completedBatchMap.set(currentBatch.batchNumber, cards);
+
+      if (isLastBatch) {
+        // All batches now checkpointed! Collect all in stable order and finalize.
+        const allCards: Array<{ front: string; back: string; aliases: string[]; sourceQuote: string }> = [];
+        for (const b of plannedBatches) {
+          const c = completedBatchMap.get(b.batchNumber) || [];
+          allCards.push(...c);
+        }
+
+        const finalizeResult = await atomicFinalizeGenerationJobServer({
+          jobId: targetJobId,
+          flashcards: allCards,
+        });
+
+        if (finalizeResult.error || !finalizeResult.data) {
+          throw new Error(finalizeResult.error?.message || "Failed to finalize flashcard job");
+        }
+
+        return {
+          success: true,
+          done: true,
+          jobId: targetJobId,
+          packId: finalizeResult.data.packId,
+          artifactId: finalizeResult.data.artifactId,
+          acceptedCount: allCards.length,
+        };
+      }
+
+      // More batches remain; trigger next step wake-up
+      dispatchGenerationWakeup(targetJobId);
+
+      return {
+        success: true,
+        done: false,
+        jobId: targetJobId,
+        batchNumber: currentBatch.batchNumber,
+        acceptedCount: checkpointRes.data.acceptedCount,
+      };
     }
 
-    if (await checkCancel()) {
-      await privilegedClient
-        .from("generation_jobs")
-        .update({
-          status: "cancelled",
-          stage: "cancelled",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
-      return { success: false, error: "Job cancelled by user" };
+    // Quiz generation
+    const plannedBatches = planBatches(requestedCount, sourceContent);
+    const completedBatchMap = new Map<number, GeneratedQuestion[]>();
+
+    if (Array.isArray(existingBatches)) {
+      for (const b of existingBatches as Array<{
+        batchNumber: number;
+        status: string;
+        acceptedQuestions?: unknown;
+      }>) {
+        if (b.status === "completed" && Array.isArray(b.acceptedQuestions)) {
+          completedBatchMap.set(b.batchNumber, b.acceptedQuestions as GeneratedQuestion[]);
+        }
+      }
     }
 
-    const finalizeResult = await atomicFinalizeGenerationJobServer({
-      jobId,
-      questions: collectedQuestions,
+    const nextBatchIndex = plannedBatches.findIndex((b) => !completedBatchMap.has(b.batchNumber));
+
+    if (nextBatchIndex === -1) {
+      const allQuestions: GeneratedQuestion[] = [];
+      for (const b of plannedBatches) {
+        allQuestions.push(...(completedBatchMap.get(b.batchNumber) || []));
+      }
+
+      const finalizeResult = await atomicFinalizeGenerationJobServer({
+        jobId: targetJobId,
+        questions: allQuestions,
+      });
+
+      if (finalizeResult.error || !finalizeResult.data) {
+        throw new Error(finalizeResult.error?.message || "Failed to finalize quiz job");
+      }
+
+      return {
+        success: true,
+        done: true,
+        jobId: targetJobId,
+        packId: finalizeResult.data.packId,
+        artifactId: finalizeResult.data.artifactId,
+        acceptedCount: allQuestions.length,
+      };
+    }
+
+    const currentBatch = plannedBatches[nextBatchIndex];
+
+    await heartbeatGenerationJobServer({
+      jobId: targetJobId,
+      leaseOwner: workerId,
+      fencingToken,
     });
 
-    if (finalizeResult.error || !finalizeResult.data) {
-      throw new Error(finalizeResult.error?.message || "Failed to finalize quiz job");
+    const previouslyAccepted: GeneratedQuestion[] = [];
+    for (const b of plannedBatches) {
+      if (completedBatchMap.has(b.batchNumber)) {
+        previouslyAccepted.push(...completedBatchMap.get(b.batchNumber)!);
+      }
     }
+
+    let batchQuestions: GeneratedQuestion[] = [];
+
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const provider = new GeminiStudyPackProvider();
+        const rawBatch = await provider.generate({
+          title: `${title} (Batch ${currentBatch.batchNumber})`,
+          source: currentBatch.sourceChunk,
+          count: currentBatch.allocatedCount,
+        });
+
+        for (const q of rawBatch) {
+          if (
+            verifySourceGrounding(sourceContent, q.sourceQuote) &&
+            !isQuestionDuplicate(q, [...previouslyAccepted, ...batchQuestions])
+          ) {
+            batchQuestions.push(q);
+          }
+        }
+      } catch (genErr) {
+        if (process.env.NODE_ENV === "test") {
+          batchQuestions = createFixtureBatchQuestions(
+            currentBatch.sourceChunk,
+            currentBatch.allocatedCount,
+            nextBatchIndex,
+            previouslyAccepted
+          );
+        } else {
+          throw genErr;
+        }
+      }
+    } else {
+      batchQuestions = createFixtureBatchQuestions(
+        currentBatch.sourceChunk,
+        currentBatch.allocatedCount,
+        nextBatchIndex,
+        previouslyAccepted
+      );
+    }
+
+    const isLastBatch = nextBatchIndex === plannedBatches.length - 1;
+
+    const checkpointRes = await checkpointGenerationBatchServer({
+      jobId: targetJobId,
+      batchNumber: currentBatch.batchNumber,
+      acceptedItems: batchQuestions,
+      stage: isLastBatch ? "finalizing" : "batching",
+      leaseOwner: workerId,
+      fencingToken,
+    });
+
+    if (!checkpointRes.data?.success) {
+      if (checkpointRes.data?.reason === "fenced") {
+        return { success: false, reason: "fenced", jobId: targetJobId };
+      }
+      throw new Error(checkpointRes.error?.message || "Failed to checkpoint batch");
+    }
+
+    completedBatchMap.set(currentBatch.batchNumber, batchQuestions);
+
+    if (isLastBatch) {
+      const allQuestions: GeneratedQuestion[] = [];
+      for (const b of plannedBatches) {
+        allQuestions.push(...(completedBatchMap.get(b.batchNumber) || []));
+      }
+
+      const finalizeResult = await atomicFinalizeGenerationJobServer({
+        jobId: targetJobId,
+        questions: allQuestions,
+      });
+
+      if (finalizeResult.error || !finalizeResult.data) {
+        throw new Error(finalizeResult.error?.message || "Failed to finalize quiz job");
+      }
+
+      return {
+        success: true,
+        done: true,
+        jobId: targetJobId,
+        packId: finalizeResult.data.packId,
+        artifactId: finalizeResult.data.artifactId,
+        acceptedCount: allQuestions.length,
+      };
+    }
+
+    dispatchGenerationWakeup(targetJobId);
 
     return {
       success: true,
-      packId: finalizeResult.data.packId,
-      artifactId: finalizeResult.data.artifactId,
+      done: false,
+      jobId: targetJobId,
+      batchNumber: currentBatch.batchNumber,
+      acceptedCount: checkpointRes.data.acceptedCount,
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await privilegedClient
-      .from("generation_jobs")
-      .update({
-        status: "failed",
-        stage: "failed",
-        failure_code: "GENERATION_FAILED",
-        failure_message: errorMsg,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
+    const isRateLimit = errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED");
+    const isTimeout =
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("aborted") ||
+      errorMsg.includes("TIMEOUT");
+    const isUnavailable =
+      errorMsg.includes("503") ||
+      errorMsg.includes("502") ||
+      errorMsg.includes("500") ||
+      errorMsg.includes("UNAVAILABLE") ||
+      errorMsg.includes("fetch failed");
 
-    return { success: false, error: errorMsg };
+    const isRetryable = isRateLimit || isTimeout || isUnavailable;
+    const currentProviderAttempts =
+      typeof jobRecord?.provider_attempts === "number" ? jobRecord.provider_attempts : 0;
+
+    if (isRetryable && currentProviderAttempts < 2) {
+      const delaySeconds = isRateLimit
+        ? 15 + Math.floor(Math.random() * 5)
+        : Math.min(30, Math.pow(2, currentProviderAttempts + 1) * 2 + Math.floor(Math.random() * 3));
+
+      const errorCode = isRateLimit
+        ? "RATE_LIMITED"
+        : isTimeout
+        ? "TIMEOUT"
+        : "PROVIDER_UNAVAILABLE";
+
+      await recordGenerationRetryServer({
+        jobId: targetJobId,
+        fencingToken,
+        errorCode,
+        errorMessage: errorMsg,
+        delaySeconds,
+      });
+
+      return {
+        success: false,
+        reason: "retry_scheduled",
+        error: errorMsg,
+        jobId: targetJobId,
+      };
+    }
+
+    // Terminal failure or exhausted retries
+    const terminalCode = isRetryable ? "PROVIDER_EXHAUSTED" : "GENERATION_FAILED";
+    await releaseGenerationJobServer({
+      jobId: targetJobId,
+      cancelled: false,
+      failureCode: terminalCode,
+      failureMessage: errorMsg,
+    });
+
+    return { success: false, error: errorMsg, jobId: targetJobId };
   }
 }
+
+/**
+ * Runs the durable generation workflow for a job to completion
+ */
+export async function runGenerationJob(
+  jobId: string,
+  options?: { workerId?: string; maxSteps?: number }
+): Promise<{
+  success: boolean;
+  packId?: string;
+  artifactId?: string;
+  error?: string;
+}> {
+  const maxSteps = options?.maxSteps ?? 12;
+  const workerId = options?.workerId;
+
+  for (let step = 0; step < maxSteps; step++) {
+    const stepResult = await executeGenerationStep({ jobId, workerId });
+    if (!stepResult.success) {
+      return {
+        success: false,
+        error: stepResult.error || stepResult.reason || "Generation step failed",
+      };
+    }
+    if (stepResult.done) {
+      return {
+        success: true,
+        packId: stepResult.packId,
+        artifactId: stepResult.artifactId,
+      };
+    }
+  }
+
+  return { success: false, error: "Maximum generation steps exceeded" };
+}
+

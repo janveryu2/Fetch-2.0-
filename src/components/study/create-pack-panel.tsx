@@ -26,6 +26,7 @@ import {
 } from "@/lib/study/request-lifecycle";
 import { CreateManualDeckModal } from "@/components/study/create-manual-deck-modal";
 import { PaperScanIntake } from "@/components/study/paper-scan-intake";
+import { GenerationProgress } from "@/components/study/generation-progress";
 
 export function CreatePackPanel() {
   const router = useRouter();
@@ -64,6 +65,7 @@ export function CreatePackPanel() {
     acceptedCount: number;
     requestedCount: number;
     cancelRequested: boolean;
+    createdAt?: string | null;
   } | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
@@ -83,13 +85,14 @@ export function CreatePackPanel() {
         const res = await fetch(`/api/generate/job/${jobProgress.jobId}`);
         if (!res.ok) return;
         const data = await res.json();
-        setJobProgress({
+        setJobProgress((prev) => ({
           jobId: data.jobId,
           stage: data.stage,
           acceptedCount: data.acceptedCount || 0,
           requestedCount: data.requestedCount,
           cancelRequested: data.cancelRequested,
-        });
+          createdAt: data.createdAt || prev?.createdAt || null,
+        }));
 
         if (data.status === "completed") {
           clearInterval(interval);
@@ -263,6 +266,7 @@ export function CreatePackPanel() {
           acceptedCount: 0,
           requestedCount: count,
           cancelRequested: false,
+          createdAt: data.createdAt || new Date().toISOString(),
         });
       } catch (err) {
         setLoading(false);
@@ -457,7 +461,7 @@ export function CreatePackPanel() {
         <div
           role="tablist"
           aria-label="Material type"
-          className="grid grid-cols-3 rounded-xl bg-[var(--surface-subtle)] p-1"
+          className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-subtle)] p-1 sm:grid-cols-4"
         >
           {tabs.map(({ id, label, status, icon: Icon }) => (
             <button
@@ -867,46 +871,19 @@ export function CreatePackPanel() {
         )}
 
         {/* Live Staged Generation Progress */}
-        {loading && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="mt-5 rounded-xl border border-[var(--fetch-blue-200)] bg-[var(--fetch-blue-50)] p-4 text-sm"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <p className="font-bold text-[var(--fetch-blue-900)]">
-                  {jobProgress?.cancelRequested
-                    ? "Stopping generation after this batch..."
-                    : jobProgress?.stage === "queued"
-                    ? "Queued in generation pipeline..."
-                    : jobProgress?.stage === "extracting"
-                    ? "Analyzing source material coverage..."
-                    : jobProgress?.stage === "batching"
-                    ? `Generating questions in batches (${jobProgress.acceptedCount}/${jobProgress.requestedCount} accepted)...`
-                    : jobProgress?.stage === "grounding"
-                    ? "Verifying factual grounding against source quotes..."
-                    : jobProgress?.stage === "finalizing"
-                    ? "Finalizing and saving StudyPack transactionally..."
-                    : "Writing your study material with AI..."}
-                </p>
-                <p className="mt-0.5 text-xs text-[var(--fetch-blue-700)]">
-                  Generation is running durably. You can wait or cancel without consuming quota.
-                </p>
-              </div>
-              {jobProgress && jobProgress.stage !== "finalizing" && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={cancelJob}
-                  disabled={cancelling || jobProgress.cancelRequested}
-                  className="shrink-0"
-                >
-                  {jobProgress.cancelRequested ? "Stopping..." : "Stop generation"}
-                </Button>
-              )}
-            </div>
-          </div>
+        {loading && jobProgress && (
+          <GenerationProgress
+            jobId={jobProgress.jobId}
+            artifactKind={outputKind}
+            title={title.trim()}
+            stage={jobProgress.stage}
+            acceptedCount={jobProgress.acceptedCount}
+            requestedCount={jobProgress.requestedCount}
+            createdAt={jobProgress.createdAt}
+            cancelRequested={jobProgress.cancelRequested}
+            cancelling={cancelling}
+            onCancel={cancelJob}
+          />
         )}
 
         {warning && (

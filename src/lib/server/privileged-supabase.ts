@@ -476,6 +476,44 @@ export async function requestCancelGenerationJobServer(params: {
   }
 }
 
+export async function releaseGenerationJobServer(params: {
+  jobId: string;
+  failureCode?: string;
+  failureMessage?: string;
+  cancelled?: boolean;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean; status: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available for job release.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("release_generation_job", {
+      p_job_id: params.jobId,
+      p_failure_code: params.failureCode || null,
+      p_failure_message: params.failureMessage || null,
+      p_cancelled: params.cancelled || false,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return {
+      data: data as { success: boolean; status: string },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to release generation job"),
+    };
+  }
+}
+
 export async function atomicFinalizeGenerationJobServer(params: {
   jobId: string;
   questions?: unknown[];
@@ -727,10 +765,12 @@ export async function checkpointGenerationBatchServer(params: {
   jobId: string;
   batchNumber: number;
   acceptedItems: unknown;
-  newAcceptedCount: number;
+  newAcceptedCount?: number;
   stage?: string;
+  leaseOwner?: string;
+  fencingToken?: number;
   fallbackClient?: SupabaseClient;
-}): Promise<{ data: { success: boolean } | null; error: Error | null }> {
+}): Promise<{ data: { success: boolean; acceptedCount?: number; reason?: string } | null; error: Error | null }> {
   const privilegedClient = getPrivilegedSupabaseClient();
   const client = privilegedClient || params.fallbackClient;
 
@@ -743,19 +783,159 @@ export async function checkpointGenerationBatchServer(params: {
       p_job_id: params.jobId,
       p_batch_number: params.batchNumber,
       p_accepted_items: params.acceptedItems,
-      p_new_accepted_count: params.newAcceptedCount,
+      p_new_accepted_count: params.newAcceptedCount ?? null,
       p_stage: params.stage ?? "batching",
+      p_lease_owner: params.leaseOwner ?? null,
+      p_fencing_token: params.fencingToken ?? null,
     });
 
     if (error) {
       return { data: null, error: new Error(error.message) };
     }
 
-    return { data: data as { success: boolean }, error: null };
+    return { data: data as { success: boolean; acceptedCount?: number; reason?: string }, error: null };
   } catch (err) {
     return {
       data: null,
       error: err instanceof Error ? err : new Error("Failed to checkpoint generation batch"),
+    };
+  }
+}
+
+export interface ClaimGenerationStepResult {
+  success: boolean;
+  reason: string;
+  jobId?: string;
+  fencingToken?: number;
+  leaseExpiresAt?: string;
+  artifactKind?: "quiz" | "flashcards" | "summary";
+  requestedCount?: number;
+  acceptedCount?: number;
+  stage?: string;
+  title?: string;
+  sourceType?: string;
+  sourceLabel?: string;
+  status?: string;
+  leaseOwner?: string;
+}
+
+export async function claimGenerationStepServer(params: {
+  workerId: string;
+  jobId?: string;
+  leaseSeconds?: number;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: ClaimGenerationStepResult | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("claim_generation_step", {
+      p_worker_id: params.workerId,
+      p_job_id: params.jobId || null,
+      p_lease_seconds: params.leaseSeconds ?? 75,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as ClaimGenerationStepResult, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to claim generation step"),
+    };
+  }
+}
+
+export async function heartbeatGenerationJobServer(params: {
+  jobId: string;
+  leaseOwner: string;
+  fencingToken: number;
+  extendSeconds?: number;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean; leaseExpiresAt?: string; reason?: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("heartbeat_generation_job", {
+      p_job_id: params.jobId,
+      p_lease_owner: params.leaseOwner,
+      p_fencing_token: params.fencingToken,
+      p_extend_seconds: params.extendSeconds ?? 60,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { success: boolean; leaseExpiresAt?: string; reason?: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to heartbeat generation job"),
+    };
+  }
+}
+
+export async function listMyGenerationJobsServer(params: {
+  client: SupabaseClient;
+  activeOnly?: boolean;
+}): Promise<{ data: GenerationJobStatusData[] | null; error: Error | null }> {
+  try {
+    const { data, error } = await params.client.rpc("list_my_generation_jobs", {
+      p_active_only: params.activeOnly ?? true,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as GenerationJobStatusData[], error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to list generation jobs"),
+    };
+  }
+}
+
+export async function sweepGenerationJobsServer(params?: {
+  staleSeconds?: number;
+  deadlineMinutes?: number;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean; expiredCount: number; cancelledCount: number; reclaimedCount: number } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params?.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("sweep_generation_jobs", {
+      p_stale_seconds: params?.staleSeconds ?? 75,
+      p_deadline_minutes: params?.deadlineMinutes ?? 30,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { success: boolean; expiredCount: number; cancelledCount: number; reclaimedCount: number }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to sweep generation jobs"),
     };
   }
 }
@@ -785,6 +965,43 @@ export async function getGenerationJobForRunnerServer(params: {
     return {
       data: null,
       error: err instanceof Error ? err : new Error("Failed to get runner job data"),
+    };
+  }
+}
+
+export async function recordGenerationRetryServer(params: {
+  jobId: string;
+  fencingToken: number;
+  errorCode: string;
+  errorMessage: string;
+  delaySeconds?: number;
+  fallbackClient?: SupabaseClient;
+}): Promise<{ data: { success: boolean; nextRunAt?: string; providerAttempts?: number; reason?: string } | null; error: Error | null }> {
+  const privilegedClient = getPrivilegedSupabaseClient();
+  const client = privilegedClient || params.fallbackClient;
+
+  if (!client) {
+    return { data: null, error: new Error("No database client available.") };
+  }
+
+  try {
+    const { data, error } = await client.rpc("record_generation_retry", {
+      p_job_id: params.jobId,
+      p_fencing_token: params.fencingToken,
+      p_error_code: params.errorCode,
+      p_error_message: params.errorMessage,
+      p_delay_seconds: params.delaySeconds ?? 10,
+    });
+
+    if (error) {
+      return { data: null, error: new Error(error.message) };
+    }
+
+    return { data: data as { success: boolean; nextRunAt?: string; providerAttempts?: number; reason?: string }, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err : new Error("Failed to record generation retry"),
     };
   }
 }

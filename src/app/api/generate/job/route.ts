@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
 import { startGenerationJobServer } from "@/lib/server/privileged-supabase";
-import { runGenerationJob } from "@/lib/ai/durable-generation";
+import { dispatchGenerationWakeup } from "@/lib/ai/durable-generation";
 import { createApiErrorResponse } from "@/lib/api-errors";
 
 export const maxDuration = 60;
@@ -46,22 +46,45 @@ export async function POST(request: Request) {
         p_doc_id: parsed.data.documentId,
       });
       const typedDoc = docData as { extractedText?: string; fileName?: string } | null;
-      if (typedDoc?.extractedText) {
-        resolvedSource = typedDoc.extractedText;
-        resolvedLabel = typedDoc.fileName || resolvedLabel;
+      if (!typedDoc) {
+        return createApiErrorResponse(
+          "DOCUMENT_NOT_FOUND",
+          "The referenced PDF document was not found or has expired.",
+          404
+        );
       }
+      if (!typedDoc.extractedText || typedDoc.extractedText.trim().length < 80) {
+        return createApiErrorResponse(
+          "EXTRACTION_FAILED",
+          "PDF text extraction produced insufficient readable text (minimum 80 characters required). Please verify the document is not scanned without OCR, empty, or password protected.",
+          422
+        );
+      }
+      resolvedSource = typedDoc.extractedText;
+      resolvedLabel = typedDoc.fileName || resolvedLabel;
     } else if (parsed.data.sourceType === "scan") {
       const { data: docData } = await account.supabase.rpc("get_scan_document", {
         p_document_id: parsed.data.documentId,
       });
       const typedScan = docData as { title?: string; pages?: Array<{ extractedText?: string }> } | null;
-      if (typedScan?.pages) {
-        const texts = typedScan.pages.map((p) => p.extractedText).filter(Boolean);
-        if (texts.length > 0) {
-          resolvedSource = texts.join("\n\n");
-        }
-        resolvedLabel = typedScan.title || resolvedLabel;
+      if (!typedScan) {
+        return createApiErrorResponse(
+          "DOCUMENT_NOT_FOUND",
+          "The referenced scan document was not found or has expired.",
+          404
+        );
       }
+      const texts = typedScan.pages?.map((p) => p.extractedText).filter(Boolean) || [];
+      const combined = texts.join("\n\n").trim();
+      if (texts.length === 0 || combined.length < 80) {
+        return createApiErrorResponse(
+          "EXTRACTION_FAILED",
+          "Scan OCR extraction produced insufficient readable text (minimum 80 characters required). Please re-scan with clearer lighting or higher contrast.",
+          422
+        );
+      }
+      resolvedSource = combined;
+      resolvedLabel = typedScan.title || resolvedLabel;
     }
   }
 
@@ -131,18 +154,20 @@ export async function POST(request: Request) {
 
   const { jobId, status, stage, reused } = startResult.data;
 
-  // If not reused and in_progress, trigger the runner
+  // If not reused and in_progress, trigger the best-effort post-commit wake-up
+  // Supabase Cron sweep runs every minute as the authoritative background recovery backstop
   if (!reused && status === "in_progress") {
-    // Run worker in background
-    runGenerationJob(jobId).catch((err) => {
-      console.error(`[Generation Job ${jobId} Execution Error]:`, err);
-    });
+    dispatchGenerationWakeup(jobId);
   }
 
-  return Response.json({
-    jobId,
-    status,
-    stage,
-    reused,
-  });
+  return Response.json(
+    {
+      jobId,
+      status,
+      stage,
+      reused,
+      createdAt: new Date().toISOString(),
+    },
+    { status: 202 }
+  );
 }

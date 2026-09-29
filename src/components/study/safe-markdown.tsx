@@ -149,6 +149,25 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
       currentList = null;
     };
 
+    const isTableRow = (str: string): boolean => {
+      const s = str.trim();
+      return s.startsWith("|") && s.endsWith("|") && s.length > 2;
+    };
+
+    const isTableDelimiter = (str: string): boolean => {
+      const s = str.trim();
+      return s.startsWith("|") && s.endsWith("|") && /^\|(?:\s*:?-+:?\s*\|)+$/.test(s);
+    };
+
+    const parseCells = (rowStr: string): string[] => {
+      const trimmed = rowStr.trim();
+      const inner =
+        trimmed.startsWith("|") && trimmed.endsWith("|")
+          ? trimmed.slice(1, -1)
+          : trimmed;
+      return inner.split("|").map((c) => c.trim());
+    };
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
@@ -185,6 +204,78 @@ export function SafeMarkdown({ content, className = "" }: SafeMarkdownProps) {
 
       if (inCodeBlock) {
         codeLines.push(line);
+        continue;
+      }
+
+      // Check for Markdown table block (header + delimiter)
+      if (isTableRow(line) && i + 1 < lines.length && isTableDelimiter(lines[i + 1])) {
+        flushList();
+        const headers = parseCells(line);
+        i += 2; // skip header and delimiter row
+        const rows: string[][] = [];
+        while (i < lines.length && isTableRow(lines[i])) {
+          rows.push(parseCells(lines[i]));
+          i++;
+        }
+        i--; // step back since for loop will i++
+
+        blocks.push(
+          <div
+            key={blocks.length}
+            className="my-3.5 overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)]"
+          >
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border-subtle)] bg-[var(--surface-subtle)]">
+                  {headers.map((h, hi) => (
+                    <th key={hi} className="px-3.5 py-2.5 font-bold text-[var(--text-primary)]">
+                      {parseInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {rows.map((row, ri) => (
+                  <tr key={ri} className="hover:bg-[var(--surface-subtle)]/50 transition-colors">
+                    {row.map((cell, ci) => (
+                      <td key={ci} className="px-3.5 py-2 text-[var(--text-primary)] align-top leading-relaxed">
+                        {parseInline(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+
+      // Check for malformed pseudo-table line: isolated row with pipes
+      if (isTableRow(line)) {
+        flushList();
+        const cells = parseCells(line);
+        if (cells.length > 1) {
+          blocks.push(
+            <div
+              key={blocks.length}
+              className="my-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-3 text-sm leading-relaxed"
+            >
+              <strong className="font-bold text-[var(--fetch-blue-700)] block mb-0.5">
+                {parseInline(cells[0])}
+              </strong>
+              <div className="text-[var(--text-primary)]">
+                {parseInline(cells.slice(1).join(" — "))}
+              </div>
+            </div>
+          );
+        } else if (cells.length === 1 && cells[0]) {
+          blocks.push(
+            <p key={blocks.length} className="my-1.5 text-sm leading-relaxed text-[var(--text-primary)] break-words">
+              {parseInline(cells[0])}
+            </p>
+          );
+        }
         continue;
       }
 

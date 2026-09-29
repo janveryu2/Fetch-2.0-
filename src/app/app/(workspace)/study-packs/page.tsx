@@ -7,6 +7,7 @@ import { MagnifyingGlass, Plus, Stack } from "@phosphor-icons/react";
 import { Suspense, useEffect, useState, useTransition } from "react";
 import { useDemo } from "@/components/app/demo-provider";
 import { Button } from "@/components/ui/button";
+import { StudyPackCardSkeleton } from "@/components/ui/domain-skeletons";
 import {
   buildStudyPacksQuery,
   parseStudyPacksParams,
@@ -93,10 +94,11 @@ function StudyPacksContent() {
       </div>
 
       {status === "loading" ? (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-2xl bg-[var(--surface-subtle)] p-12 text-center">
-          <p className="text-sm font-semibold text-[var(--text-secondary)]" role="status">
-            Loading your StudyPacks…
-          </p>
+        <div className="mt-8 grid gap-4 md:grid-cols-2" role="status" aria-label="Loading your StudyPacks">
+          <StudyPackCardSkeleton />
+          <StudyPackCardSkeleton />
+          <StudyPackCardSkeleton />
+          <StudyPackCardSkeleton />
         </div>
       ) : packs.length === 0 ? (
         /* Empty state: Hide search and sort controls to keep the single next step prominent */

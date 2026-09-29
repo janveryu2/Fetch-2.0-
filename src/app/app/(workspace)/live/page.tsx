@@ -15,6 +15,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { useDemo } from "@/components/app/demo-provider";
 
 interface RoomMember {
@@ -328,9 +329,12 @@ export default function LivePage() {
                   {roomState.members.map((m) => (
                     <div key={m.userId} className="flex items-center justify-between p-2 rounded-lg bg-[var(--surface-subtle)] text-sm">
                       <div className="flex items-center gap-2">
-                        <div className="size-7 rounded-lg bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-700)] font-bold flex items-center justify-center text-xs">
-                          {m.displayName[0]?.toUpperCase() || "P"}
-                        </div>
+                        <UserAvatar
+                          src={m.avatarUrl}
+                          alt={m.displayName}
+                          size={28}
+                          className="size-7 rounded-lg"
+                        />
                         <span className="font-medium">{m.displayName}</span>
                         {m.isMe && <span className="text-xs text-[var(--text-secondary)]">(You)</span>}
                       </div>
@@ -443,6 +447,12 @@ export default function LivePage() {
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="font-mono text-xs font-bold text-[var(--text-tertiary)] w-4">{idx + 1}</span>
+                        <UserAvatar
+                          src={m.avatarUrl}
+                          alt={m.displayName}
+                          size={24}
+                          className="size-6 rounded-md"
+                        />
                         <span className="font-medium truncate">{m.displayName}</span>
                       </div>
                       <span className="font-mono font-bold text-xs text-[var(--fetch-blue-700)] shrink-0">
@@ -477,6 +487,12 @@ export default function LivePage() {
                     >
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm">{idx === 0 ? "👑" : `${idx + 1}.`}</span>
+                        <UserAvatar
+                          src={m.avatarUrl}
+                          alt={m.displayName}
+                          size={24}
+                          className="size-6 rounded-md"
+                        />
                         <span>{m.displayName}</span>
                         {m.isMe && <span className="text-xs text-[var(--text-secondary)]">(You)</span>}
                       </div>
