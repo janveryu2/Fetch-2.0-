@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   Camera,
   FilePdf,
@@ -435,33 +436,42 @@ export function CreatePackPanel() {
   };
 
   return (
-    <section id="add-material" className="surface-card overflow-hidden">
-      <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
-        <div>
-          <h2 className="font-display text-2xl font-semibold">
-            Create a StudyPack
-          </h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            Add material, choose a size, and generate focused practice.
-          </p>
+    <section id="add-material" className="surface-card overflow-hidden rounded-3xl border border-[var(--border-subtle)] shadow-xs">
+      <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex items-center gap-3">
+          <Image
+            src="/assets/icons/nav/studypacks.png"
+            alt=""
+            width={44}
+            height={44}
+            className="size-11 shrink-0"
+          />
+          <div>
+            <h2 className="font-display text-xl sm:text-2xl font-black text-[var(--text-primary)]">
+              Create a StudyPack
+            </h2>
+            <p className="mt-0.5 text-xs sm:text-sm text-[var(--text-secondary)]">
+              Add your material, choose a format, and let FETCH turn it into focused practice.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {mode === "account" && aiUsage && (
-            <span className="text-xs font-bold text-[var(--fetch-blue-700)] bg-[var(--fetch-blue-50)] px-2.5 py-1 rounded-full border border-[var(--fetch-blue-200)]">
+            <span className="text-xs font-bold text-[var(--fetch-blue-700)] bg-[var(--fetch-blue-50)] px-3 py-1 rounded-full border border-[var(--fetch-blue-200)]">
               {aiUsage.remaining} of {aiUsage.allowance} AI packs left this month
             </span>
           )}
-          <Badge tone={mode === "account" ? "success" : "neutral"}>
-            {mode === "account" ? "Connected account" : "Browser demo"}
+          <Badge tone={mode === "account" ? "success" : "neutral"} className="rounded-full px-3 py-1 font-bold">
+            {mode === "account" ? "✓ Connected account" : "Browser demo"}
           </Badge>
         </div>
       </div>
 
-      <div className="p-5 sm:p-7">
+      <div className="p-5 sm:p-6">
         <div
           role="tablist"
           aria-label="Material type"
-          className="grid grid-cols-2 gap-1 rounded-xl bg-[var(--surface-subtle)] p-1 sm:grid-cols-4"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
         >
           {tabs.map(({ id, label, status, icon: Icon }) => (
             <button
@@ -478,26 +488,19 @@ export function CreatePackPanel() {
                 setError("");
               }}
               className={cn(
-                "flex min-h-12 cursor-pointer flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 rounded-[10px] px-2 py-1 font-extrabold transition-colors",
+                "flex min-h-[50px] cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-extrabold transition-all",
                 tab === id
-                  ? "bg-[var(--surface-card)] text-[var(--fetch-blue-700)] shadow-sm"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]",
+                  ? "border-[#1068E9] bg-[var(--surface-card)] text-[#1068E9] shadow-xs ring-2 ring-[#1068E9]/15"
+                  : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-card)]",
               )}
             >
-              <div className="flex items-center gap-1.5">
-                <Icon size={18} aria-hidden="true" />
-                <span>{label}</span>
-              </div>
-              <span
-                className={cn(
-                  "text-[10px] font-bold px-1.5 py-0.2 rounded",
-                  id === "paste"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-[var(--surface-subtle)] text-[var(--text-tertiary)]",
-                )}
-              >
-                {status}
-              </span>
+              <Icon size={19} weight={tab === id ? "bold" : "regular"} aria-hidden="true" />
+              <span>{label}</span>
+              {status !== "Available" && (
+                <span className="text-[10px] font-bold text-[var(--text-tertiary)] bg-[var(--border-subtle)] px-1.5 py-0.5 rounded-sm">
+                  {status}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -545,7 +548,8 @@ export function CreatePackPanel() {
         </div>
 
         {tab === "paste" && (
-          <label className="mt-5 block font-extrabold">
+          <>
+            <label className="mt-5 block font-extrabold">
             Paste your study material
             <textarea
               value={source}
@@ -574,11 +578,52 @@ export function CreatePackPanel() {
                   : `Ready to generate (${source.trim().length.toLocaleString()} characters)`}
               </span>
               <span className="font-bold text-[var(--text-tertiary)]">
-                {source.length.toLocaleString()} / 20,000
+                {source.length.toLocaleString()} / 20,000 characters
               </span>
             </div>
           </label>
-        )}
+
+          {/* Quick Example Starter Pills from visual reference */}
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-[var(--text-secondary)]">Or try a quick example:</span>
+            {[
+              {
+                label: "🧬 Biology: Cell structure",
+                title: "Biology: Cell Structure",
+                text: "Cells are the basic structural and functional units of all living organisms. The cell membrane is a phospholipid bilayer that regulates transport into and out of the cell. Mitochondria generate ATP through cellular respiration. Ribosomes assemble proteins from mRNA sequences. Plant cells contain chloroplasts for photosynthesis and a rigid cellulose cell wall.",
+              },
+              {
+                label: "📐 Math: Quadratic functions",
+                title: "Math: Quadratic Functions",
+                text: "A quadratic function is a second-degree polynomial of the form f(x) = ax² + bx + c. The graph of a quadratic function is a parabola with a vertex at (-b/2a, f(-b/2a)). The discriminant Δ = b² - 4ac determines the nature of the roots: two real roots if Δ > 0, one repeated root if Δ = 0, and complex conjugate roots if Δ < 0.",
+              },
+              {
+                label: "🏛️ History: World War II",
+                title: "History: World War II",
+                text: "World War II was a global conflict lasting from 1939 to 1945 between the Allies and Axis powers. Key turning points included the Battle of Stalingrad in 1943, the Allied invasion of Normandy on D-Day in June 1944, and the Pacific naval engagements at Midway. The war ended following unconditional surrenders in 1945.",
+              },
+              {
+                label: "🧠 Psychology: Memory",
+                title: "Psychology: Memory",
+                text: "Human memory is categorized into sensory memory, working or short-term memory, and long-term memory. Working memory holds information temporarily with a limited capacity of roughly 7 plus or minus 2 items. Long-term memory divides into explicit declarative memory (semantic and episodic) and implicit procedural memory.",
+              },
+            ].map((example) => (
+              <button
+                key={example.label}
+                type="button"
+                onClick={() => {
+                  setTitle(example.title);
+                  setSource(example.text);
+                  setError("");
+                }}
+                className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--text-secondary)] hover:border-[var(--fetch-blue-400)] hover:bg-[var(--surface-card)] hover:text-[var(--fetch-blue-700)] transition-all cursor-pointer"
+              >
+                {example.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
         {tab === "pdf" && (
           <div className="mt-5">

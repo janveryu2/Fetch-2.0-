@@ -64,16 +64,38 @@ const groups = [
     ],
   },
 ];
-const navArtwork: Record<string, [number, number]> = {
-  Home: [2, 0], StudyPacks: [3, 0], Progress: [0, 1], Calendar: [1, 1],
-  "FETCH AI Tutor": [2, 1], "Pomodoro Timer": [3, 1], "Music Studio": [0, 2],
-  Live: [1, 2], Friends: [2, 2], Messages: [3, 2], Settings: [0, 3],
-  "Dark theme": [1, 3], "Sign out": [2, 3], "Start studying": [0, 0], "Add material": [1, 0],
+const navIconMap: Record<string, string> = {
+  "Start studying": "/assets/icons/nav/start-studying.png",
+  "Add material": "/assets/icons/nav/add-material.png",
+  Home: "/assets/icons/nav/home.png",
+  StudyPacks: "/assets/icons/nav/studypacks.png",
+  Progress: "/assets/icons/nav/progress.png",
+  Calendar: "/assets/icons/nav/calendar.png",
+  "FETCH AI Tutor": "/assets/icons/nav/tutor.png",
+  "Pomodoro Timer": "/assets/icons/nav/pomodoro.png",
+  "Music Studio": "/assets/icons/nav/music.png",
+  Live: "/assets/icons/nav/live.png",
+  Friends: "/assets/icons/nav/friends.png",
+  Messages: "/assets/icons/nav/messages.png",
+  Settings: "/assets/icons/nav/settings.png",
+  "Dark theme": "/assets/icons/nav/dark-theme.png",
+  "Sign out": "/assets/icons/nav/sign-out.png",
+  "Cloud sync": "/assets/icons/nav/cloud-sync.png",
 };
 
-function NavArtwork({ name }: { name: string }) {
-  const [column, row] = navArtwork[name] ?? [2, 0];
-  return <span className="fetch-nav-art" aria-hidden="true" style={{ backgroundPosition: (-4 - column * 49) + "px " + (-19 - row * 51) + "px" }} />;
+function NavArtwork({ name, size = 36 }: { name: string; size?: number }) {
+  const iconSrc = navIconMap[name] ?? "/assets/icons/nav/home.png";
+  return (
+    <Image
+      src={iconSrc}
+      alt=""
+      width={size * 2}
+      height={size * 2}
+      className="shrink-0 object-contain"
+      style={{ width: `${size}px`, height: `${size}px` }}
+      aria-hidden="true"
+    />
+  );
 }
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -141,124 +163,204 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigation = (
     <>
       {groups.map((group) => (
-        <div key={group.name} className="mt-5">
-          <p className="fetch-nav-heading mb-2 px-2 text-[11px] font-extrabold uppercase tracking-widest text-[var(--text-tertiary)]">
+        <div key={group.name} className="mt-4">
+          <p className="fetch-nav-heading mb-1.5 px-2 text-[10px] font-black uppercase tracking-wider text-[var(--text-tertiary)]">
             {group.name}
           </p>
-          {group.items.map(({ href, label }) => {
-            const active = pathname === href || pathname.startsWith(href + "/");
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "fetch-nav-link flex min-h-[50px] items-center gap-2.5 rounded-xl px-2 text-sm font-bold no-underline transition-colors",
-                  active
-                    ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-800)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]",
-                )}
-              >
-                <NavArtwork name={label} />
-                <span className="min-w-0 flex-1">{label}</span>
-                <CaretRight size={15} weight="bold" className="opacity-60" />
-              </Link>
-            );
-          })}
+          <div className="space-y-0.5">
+            {group.items.map(({ href, label }) => {
+              const active = pathname === href || pathname.startsWith(href + "/");
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setOpen(false)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "fetch-nav-link flex min-h-[46px] items-center gap-2.5 rounded-xl px-2 text-sm font-bold no-underline transition-all",
+                    active
+                      ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-700)] font-extrabold shadow-xs"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--fetch-blue-50)] hover:text-[var(--text-primary)]",
+                  )}
+                >
+                  <NavArtwork name={label} size={34} />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <CaretRight
+                    size={15}
+                    weight="bold"
+                    className={cn("shrink-0", active ? "text-[var(--fetch-blue-600)] opacity-100" : "opacity-35")}
+                  />
+                </Link>
+              );
+            })}
+          </div>
         </div>
       ))}
     </>
   );
-  const accountActions = (
-      <div className="fetch-account-actions mt-4 border-t border-[var(--border-subtle)] pt-2">
+
+  const accountCardContent = (
+    <div className="fetch-account-card rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-2.5 text-xs">
+      <Link
+        href="/app/settings"
+        onClick={() => setOpen(false)}
+        className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[var(--surface-subtle)]"
+      >
+        <div className="relative size-9 shrink-0">
+          <Image
+            src="/assets/mascot/fetch-logo.png"
+            alt=""
+            width={36}
+            height={36}
+            className="size-9 rounded-xl object-cover"
+          />
+          <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-[#10b981] ring-2 ring-[var(--surface-card)]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <strong className="block truncate text-xs font-bold text-[var(--text-primary)]">
+            {mode === "account" ? "Your account" : "Local demo"}
+          </strong>
+          <span className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)] truncate">
+            <Image
+              src="/assets/icons/nav/cloud-sync.png"
+              alt=""
+              width={13}
+              height={13}
+              className="inline size-3.5 shrink-0"
+            />
+            {mode === "account"
+              ? status === "loading"
+                ? "Checking sync…"
+                : status === "error"
+                  ? "Sync error"
+                  : "Synced to your account"
+              : storageWarning
+                ? "Storage warning"
+                : "Saved in this browser"}
+          </span>
+        </div>
+        <CaretRight size={14} weight="bold" className="shrink-0 opacity-40" />
+      </Link>
+
+      {status === "error" && mode === "account" && (
+        <div className="px-2 py-1">
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="text-[11px] font-bold text-[var(--fetch-blue-700)] underline"
+          >
+            Retry account sync
+          </button>
+        </div>
+      )}
+
+      <div className="mt-2 border-t border-[var(--border-subtle)] pt-1 space-y-0.5">
         <Link
           href="/app/settings"
           aria-current={pathname === "/app/settings" ? "page" : undefined}
           onClick={() => setOpen(false)}
           className={cn(
-            "fetch-nav-link flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-bold",
-            pathname === "/app/settings" &&
-              "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-800)]",
+            "fetch-nav-link flex min-h-9 items-center gap-2 rounded-lg px-2 text-xs font-bold transition-colors",
+            pathname === "/app/settings"
+              ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-700)]"
+              : "text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)]",
           )}
         >
-          <NavArtwork name="Settings" /> Settings <CaretRight size={15} className="ml-auto opacity-60" />
+          <NavArtwork name="Settings" size={24} />
+          <span className="flex-1">Settings</span>
+          <CaretRight size={13} weight="bold" className="opacity-40" />
         </Link>
         <button
+          type="button"
           onClick={toggleTheme}
           role="switch"
           aria-checked={dark}
-          className="fetch-nav-link flex min-h-11 w-full cursor-pointer items-center gap-2 px-1 text-sm font-bold"
+          aria-label="Toggle dark theme"
+          className="fetch-nav-link flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] transition-colors"
         >
-          <NavArtwork name="Dark theme" />
-          <span>{dark ? "Light theme" : "Dark theme"}</span>
+          <NavArtwork name="Dark theme" size={24} />
+          <span className="flex-1 text-left">Dark theme</span>
           <span className={cn("fetch-theme-switch ml-auto", dark && "is-on")} aria-hidden="true" />
         </button>
         <button
           type="button"
           disabled={signingOut}
           onClick={() => void signOut()}
-          className="fetch-nav-link flex min-h-11 w-full cursor-pointer items-center gap-2 border-t border-[var(--border-subtle)] px-1 text-left text-sm text-[var(--text-secondary)] disabled:opacity-60"
+          className="fetch-nav-link flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-60"
         >
-          <NavArtwork name="Sign out" />
-          {signingOut ? "Signing out…" : mode === "account" ? "Sign out" : "Exit demo"}
-          <CaretRight size={15} className="ml-auto opacity-60" />
+          <NavArtwork name="Sign out" size={24} />
+          <span className="flex-1">{signingOut ? "Signing out…" : mode === "account" ? "Sign out" : "Exit demo"}</span>
+          <CaretRight size={13} weight="bold" className="opacity-40" />
         </button>
       </div>
+    </div>
   );
+
   return (
     <div className="min-h-[100dvh] lg:pl-[270px]">
       <a href="#app-main" className="skip-link">
         Skip to workspace
       </a>
-      <aside className="fetch-sidebar fixed inset-y-0 left-0 z-40 hidden w-[270px] flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-4 lg:flex">
-        <div className="fetch-sidebar-brand"><FetchBrand /></div>
+      <aside className="fetch-sidebar fixed inset-y-0 left-0 z-40 hidden w-[270px] flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-card)] px-3.5 py-3.5 lg:flex">
+        {/* Brand Card with subtle paw watermark */}
+        <div className="fetch-sidebar-brand flex items-center justify-between rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-2.5 shadow-xs">
+          <Link href="/app/home" className="flex items-center gap-2.5 no-underline">
+            <Image
+              src="/assets/mascot/fetch-logo.png"
+              alt=""
+              width={40}
+              height={40}
+              className="size-10 rounded-xl"
+              priority
+            />
+            <div>
+              <span className="font-display block text-base font-black tracking-tight text-[var(--text-primary)] leading-none">
+                FETCH
+              </span>
+              <span className="mt-0.5 block text-[9px] font-black tracking-widest text-[var(--fetch-blue-600)] leading-none">
+                STUDY BUDDY
+              </span>
+            </div>
+          </Link>
+          <div className="text-[var(--fetch-blue-300)] pr-1" aria-hidden="true">
+            <svg className="size-5" viewBox="0 0 24 24" fill="currentColor">
+              <ellipse cx="6.5" cy="8" rx="2" ry="2.5" />
+              <ellipse cx="11" cy="5" rx="2" ry="2.5" />
+              <ellipse cx="16" cy="6" rx="2" ry="2.5" />
+              <ellipse cx="19.5" cy="10" rx="1.8" ry="2.2" />
+              <path d="M7.5 15.5c0-2.5 2-4 5-4s5 1.5 5 4c0 3-2 5-5 5s-5-2-5-5z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Primary CTAs */}
         <Link
           href={studyDestination.href}
-          className="fetch-sidebar-primary mt-3 flex min-h-[52px] items-center gap-2 rounded-xl bg-[var(--action-bg)] px-3 text-sm font-extrabold text-[var(--action-text)]"
+          className="fetch-sidebar-primary mt-3 flex min-h-[48px] items-center gap-2 rounded-xl bg-gradient-to-r from-[#0066FF] to-[#1272FF] px-2.5 text-sm font-extrabold text-white shadow-md transition-transform active:scale-[0.98]"
         >
-          <NavArtwork name="Start studying" />
-          {studyDestination.label}
-          <CaretRight size={18} className="ml-auto" />
+          <NavArtwork name="Start studying" size={32} />
+          <span className="truncate">{studyDestination.label}</span>
+          <CaretRight size={16} weight="bold" className="ml-auto shrink-0" />
         </Link>
         <Link
           href="/app/home#add-material"
-          className="fetch-sidebar-add mt-2 flex min-h-[52px] items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-sm font-bold"
+          className="fetch-sidebar-add mt-1.5 flex min-h-[48px] items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-2.5 text-sm font-bold text-[var(--text-primary)] shadow-xs transition-colors hover:bg-[var(--fetch-blue-50)]"
         >
-          <NavArtwork name="Add material" />
-          Add material
-          <CaretRight size={18} className="ml-auto opacity-60" />
+          <NavArtwork name="Add material" size={32} />
+          <span>Add material</span>
+          <CaretRight size={16} weight="bold" className="ml-auto shrink-0 opacity-40" />
         </Link>
+
+        {/* Nav Links scrollable region */}
         <nav
           aria-label="App navigation"
-          className="min-h-0 flex-1 overflow-y-auto pb-3"
+          className="min-h-0 flex-1 overflow-y-auto py-2 my-1"
         >
           {navigation}
         </nav>
-        <div className="fetch-account-card border border-[var(--border-subtle)] p-3 text-xs text-[var(--text-secondary)]">
-          <div className="flex items-center justify-between gap-2">
-            <Image src="/assets/mascot/fetch-logo.png" alt="" width={40} height={40} className="size-10 shrink-0 rounded-xl" />
-            <div className="min-w-0 flex-1">
-            <strong className="text-[var(--text-primary)]">
-              {mode === "account" ? "Your account" : "Local demo"}
-            </strong>
-            <p className="truncate">
-              {mode === "account"
-                ? status === "loading" ? "Checking account sync…" : status === "error" ? "Sync error" : "Synced to your account"
-                : storageWarning ? "Storage warning" : "Saved in this browser"}
-            </p></div>
-            {status === "error" && mode === "account" && (
-              <button
-                type="button"
-                onClick={retryLoad}
-                className="font-bold text-[var(--fetch-blue-700)] underline"
-              >
-                Retry
-              </button>
-            )}
-          </div>
-          {accountActions}
-        </div>
+
+        {/* Account Card at bottom */}
+        {accountCardContent}
       </aside>
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 lg:hidden">
         <FetchBrand />
@@ -325,7 +427,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Dialog.Description className="text-sm text-[var(--text-secondary)]">
                 Study tools, community, and settings.
               </Dialog.Description>
-              <nav aria-label="All destinations">{navigation}{accountActions}</nav>
+              <nav aria-label="All destinations">
+                {navigation}
+                <div className="mt-5">{accountCardContent}</div>
+              </nav>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
