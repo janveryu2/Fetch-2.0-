@@ -4448,9 +4448,9 @@ begin
       );
 
       insert into private.question_keys (
-        question_id, pack_id, owner_id, answer, explanation, source_quote
+        question_id, owner_id, answer, explanation, source_quote
       ) values (
-        v_question_id, v_pack_id, v_job.owner_id, v_answer, v_explanation, v_source_quote
+        v_question_id, v_job.owner_id, v_answer, v_explanation, v_source_quote
       );
     end loop;
   end if;
