@@ -3194,7 +3194,7 @@ create table if not exists private.generation_jobs (
   source_label text not null check (char_length(source_label) between 1 and 120),
   requested_count integer not null check (requested_count between 3 and 50),
   accepted_count integer not null default 0 check (accepted_count >= 0),
-  stage text not null default 'queued' check (stage in ('queued', 'extracting', 'batching', 'grounding', 'finalizing', 'completed', 'failed', 'cancelled')),
+  stage text not null default 'queued' check (stage in ('queued', 'claimed', 'extracting', 'batching', 'grounding', 'finalizing', 'retrying', 'completed', 'failed', 'cancelled')),
   status text not null default 'in_progress' check (status in ('in_progress', 'completed', 'failed', 'cancelled')),
   lease_owner text default null,
   fencing_token integer not null default 1,

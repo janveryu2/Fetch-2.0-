@@ -13,6 +13,8 @@ import {
   claimGenerationStepServer,
   heartbeatGenerationJobServer,
   recordGenerationRetryServer,
+  dispatchGenerationJobServer,
+  yieldGenerationStepServer,
 } from "@/lib/server/privileged-supabase";
 
 export interface BatchPlan {
@@ -575,29 +577,9 @@ export async function generateSummaryWithGemini(params: {
   return generateSingleSummaryCall(params.title, params.source, apiKey, candidateModels);
 }
 
-/**
- * Asynchronously pings the internal worker endpoint to begin/resume processing
- * Supabase Cron sweep acts as the authoritative background recovery backstop
- */
-export function dispatchGenerationWakeup(jobId: string) {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-  const secret = process.env.FETCH_INTERNAL_WORKER_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-  fetch(`${baseUrl}/api/internal/generation/step`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-fetch-worker-secret": secret,
-    },
-    body: JSON.stringify({ jobId }),
-  }).catch((err) => {
-    // Non-blocking best effort dispatch
-    if (process.env.NODE_ENV !== "test") {
-      console.warn(`[Generation Wakeup Notice]: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  });
+/** Queue the wakeup in Postgres before acknowledging it. Cron retries missed wakeups. */
+export async function dispatchGenerationWakeup(jobId: string) {
+  return dispatchGenerationJobServer(jobId);
 }
 
 export interface ExecutionStepResult {
@@ -856,8 +838,11 @@ export async function executeGenerationStep(params?: {
         };
       }
 
-      // More batches remain; trigger next step wake-up
-      dispatchGenerationWakeup(targetJobId);
+      // Checkpoint keeps the lease; yield it before queuing the next step.
+      const yielded = await yieldGenerationStepServer({ jobId: targetJobId, leaseOwner: workerId, fencingToken });
+      if (!yielded) return { success: false, reason: "fenced", jobId: targetJobId };
+      const wakeup = await dispatchGenerationWakeup(targetJobId);
+      if (!wakeup.success) console.error(`[Generation ${targetJobId}] Next batch wakeup: ${wakeup.reason}`);
 
       return {
         success: true,
@@ -1011,7 +996,10 @@ export async function executeGenerationStep(params?: {
       };
     }
 
-    dispatchGenerationWakeup(targetJobId);
+    const yielded = await yieldGenerationStepServer({ jobId: targetJobId, leaseOwner: workerId, fencingToken });
+    if (!yielded) return { success: false, reason: "fenced", jobId: targetJobId };
+    const wakeup = await dispatchGenerationWakeup(targetJobId);
+    if (!wakeup.success) console.error(`[Generation ${targetJobId}] Next batch wakeup: ${wakeup.reason}`);
 
     return {
       success: true,
@@ -1112,4 +1100,3 @@ export async function runGenerationJob(
 
   return { success: false, error: "Maximum generation steps exceeded" };
 }
-

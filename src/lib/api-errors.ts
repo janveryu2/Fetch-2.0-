@@ -10,6 +10,7 @@ export type ApiErrorCode =
   | "DRAFT_CONFLICT"
   | "REQUEST_CONFLICT"
   | "GENERATION_FAILED"
+  | "DISPATCH_UNAVAILABLE"
   | "PROVIDER_UNAVAILABLE"
   | "STORAGE_UNAVAILABLE"
   | "RATE_LIMITED"
@@ -98,5 +99,4 @@ export function draftConflictError(
     cloudRevision !== undefined ? { cloudRevision } : undefined
   );
 }
-
 

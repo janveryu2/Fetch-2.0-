@@ -27,6 +27,9 @@ describe("Phase 3: Flashcard Speed and Provider Admission", () => {
     const dummySource = "A".repeat(500);
 
     it("plans a single batch for <= 20 flashcards (15 cards = 1 call)", () => {
+      const plan5 = planFlashcardBatches(5, dummySource);
+      expect(plan5).toHaveLength(1);
+      expect(plan5[0].allocatedCount).toBe(5);
       const plan15 = planFlashcardBatches(15, dummySource);
       expect(plan15).toHaveLength(1);
       expect(plan15[0].allocatedCount).toBe(15);
@@ -38,6 +41,9 @@ describe("Phase 3: Flashcard Speed and Provider Admission", () => {
     });
 
     it("plans 2 batches for 21-40 flashcards", () => {
+      const plan30 = planFlashcardBatches(30, dummySource);
+      expect(plan30).toHaveLength(2);
+      expect(plan30.reduce((acc, b) => acc + b.allocatedCount, 0)).toBe(30);
       const plan25 = planFlashcardBatches(25, dummySource);
       expect(plan25).toHaveLength(2);
       expect(plan25.reduce((acc, b) => acc + b.allocatedCount, 0)).toBe(25);
@@ -70,10 +76,14 @@ describe("Phase 3: Flashcard Speed and Provider Admission", () => {
     });
 
     it("preserves standard 10-item batching for planBatches (quiz)", () => {
+      expect(planBatches(5, dummySource)).toHaveLength(1);
       const quizPlan15 = planBatches(15, dummySource);
       expect(quizPlan15).toHaveLength(2);
       expect(quizPlan15[0].allocatedCount).toBe(8);
       expect(quizPlan15[1].allocatedCount).toBe(7);
+      const quizPlan30 = planBatches(30, dummySource);
+      expect(quizPlan30).toHaveLength(3);
+      expect(quizPlan30.reduce((acc, b) => acc + b.allocatedCount, 0)).toBe(30);
     });
   });
 

@@ -67,6 +67,7 @@ export function CreatePackPanel() {
     requestedCount: number;
     cancelRequested: boolean;
     createdAt?: string | null;
+    updatedAt?: string | null;
   } | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
@@ -93,6 +94,7 @@ export function CreatePackPanel() {
           requestedCount: data.requestedCount,
           cancelRequested: data.cancelRequested,
           createdAt: data.createdAt || prev?.createdAt || null,
+          updatedAt: data.updatedAt || prev?.updatedAt || null,
         }));
 
         if (data.status === "completed") {
@@ -925,6 +927,7 @@ export function CreatePackPanel() {
             acceptedCount={jobProgress.acceptedCount}
             requestedCount={jobProgress.requestedCount}
             createdAt={jobProgress.createdAt}
+            updatedAt={jobProgress.updatedAt}
             cancelRequested={jobProgress.cancelRequested}
             cancelling={cancelling}
             onCancel={cancelJob}

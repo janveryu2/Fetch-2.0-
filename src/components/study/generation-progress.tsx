@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ export interface GenerationProgressProps {
   acceptedCount: number;
   requestedCount: number;
   createdAt?: string | null;
+  updatedAt?: string | null;
   cancelRequested?: boolean;
   cancelling?: boolean;
   onCancel?: () => void;
@@ -25,6 +27,8 @@ export function getStageDescription(stage: string, artifactKind: string, accepte
   switch (stage) {
     case "queued":
       return "FETCH is finding a worker. You can leave this page anytime.";
+    case "claimed":
+      return "A worker has started your generation...";
     case "extracting":
       return "Analyzing source material coverage...";
     case "batching":
@@ -36,7 +40,7 @@ export function getStageDescription(stage: string, artifactKind: string, accepte
     case "finalizing":
       return "Saving StudyPack to your library...";
     case "retrying":
-      return "Provider connection recovered; continuing generation...";
+      return "A provider request needs another attempt. FETCH will retry automatically...";
     case "completed":
       return "Generation complete!";
     case "cancelled":
@@ -53,11 +57,17 @@ export function GenerationProgress({
   acceptedCount,
   requestedCount,
   createdAt,
+  updatedAt,
   cancelRequested,
   cancelling,
   onCancel,
   className,
 }: GenerationProgressProps) {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
   const isFinalizing = stage === "finalizing" || stage === "completed";
   const kindLabel =
     artifactKind === "flashcards"
@@ -66,7 +76,12 @@ export function GenerationProgress({
       ? "quiz questions"
       : "structured summary";
 
-  const stageText = getStageDescription(stage, artifactKind, acceptedCount, requestedCount);
+  const lastProgress = updatedAt || createdAt;
+  const elapsedWithoutProgress = lastProgress ? now - new Date(lastProgress).getTime() : 0;
+  const isSlow = ["queued", "claimed", "retrying"].includes(stage) && elapsedWithoutProgress > 20_000;
+  const stageText = isSlow
+    ? "This is taking longer than expected. FETCH will retry or stop the job automatically."
+    : getStageDescription(stage, artifactKind, acceptedCount, requestedCount);
 
   return (
     <div

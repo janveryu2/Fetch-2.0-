@@ -7,6 +7,9 @@ const mockCheckpoint = vi.fn();
 const mockGetRunnerData = vi.fn();
 const mockFinalize = vi.fn();
 const mockRelease = vi.fn();
+const mockYield = vi.fn();
+const mockDispatch = vi.fn();
+const mockAuthorizeDispatch = vi.fn();
 
 vi.mock("@/lib/server/privileged-supabase", () => ({
   claimGenerationStepServer: (args: unknown) => mockClaimStep(args),
@@ -15,6 +18,9 @@ vi.mock("@/lib/server/privileged-supabase", () => ({
   getGenerationJobForRunnerServer: (args: unknown) => mockGetRunnerData(args),
   atomicFinalizeGenerationJobServer: (args: unknown) => mockFinalize(args),
   releaseGenerationJobServer: (args: unknown) => mockRelease(args),
+  yieldGenerationStepServer: (args: unknown) => mockYield(args),
+  dispatchGenerationJobServer: (args: unknown) => mockDispatch(args),
+  authorizeGenerationDispatchServer: (args: unknown) => mockAuthorizeDispatch(args),
   getPrivilegedSupabaseClient: () => ({}),
 }));
 
@@ -27,7 +33,7 @@ describe("Phase 1: Canonical Quota & Durable Generation Dispatch", () => {
     "Chloroplasts in plant cells contain chlorophyll which absorbs sunlight. The light-dependent reactions produce ATP and NADPH in the thylakoid membranes.";
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   describe("1. Atomic Step Claims & Monotonic Fencing", () => {
@@ -361,11 +367,11 @@ describe("Phase 1: Canonical Quota & Durable Generation Dispatch", () => {
             "Content-Type": "application/json",
             "x-fetch-worker-secret": "super-secret-test-key",
           },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ jobId: "11111111-1111-4111-8111-111111111111" }),
         });
 
         const res = await internalStepHandler(req);
-        expect(res.status).toBe(400); // Because success: false, reason: no_eligible_jobs
+        expect(res.status).toBe(409); // The worker was authorized; no job was eligible.
         const body = await res.json();
         expect(body.reason).toBe("no_eligible_jobs");
       } finally {
@@ -375,6 +381,20 @@ describe("Phase 1: Canonical Quota & Durable Generation Dispatch", () => {
           delete process.env.FETCH_INTERNAL_WORKER_SECRET;
         }
       }
+    });
+
+    it("accepts a database-issued worker token and rejects an invalid one", async () => {
+      mockAuthorizeDispatch.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      mockClaimStep.mockResolvedValueOnce({ data: { success: false, reason: "no_eligible_jobs" }, error: null });
+      const makeRequest = () => new Request("http://localhost:3000/api/internal/generation/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-fetch-worker-token": "database-token" },
+        body: JSON.stringify({ jobId: "11111111-1111-4111-8111-111111111111" }),
+      });
+      expect((await internalStepHandler(makeRequest())).status).toBe(401);
+      expect((await internalStepHandler(makeRequest())).status).toBe(409);
+      expect(mockAuthorizeDispatch).toHaveBeenCalledTimes(2);
+      expect(mockClaimStep).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -415,5 +435,37 @@ describe("Phase 1: Canonical Quota & Durable Generation Dispatch", () => {
       expect(outcome.packId).toBe("pack-all");
     });
   });
-});
 
+  describe.each([
+    ["flashcards", 30],
+    ["quiz", 15],
+  ] as const)("multi-batch %s recovery", (artifactKind, requestedCount) => {
+    it("yields the checkpoint lease before queuing the next worker step", async () => {
+      vi.stubEnv("GEMINI_API_KEY", "");
+      const jobId = "job-next-batch";
+      mockClaimStep.mockResolvedValue({ data: { success: true, jobId, fencingToken: 4 }, error: null });
+      mockGetRunnerData.mockResolvedValue({
+        data: {
+          job: { id: jobId, artifact_kind: artifactKind, requested_count: requestedCount,
+            title: "Cell biology", status: "in_progress", cancel_requested: false },
+          sourceContent: sampleSource,
+          batches: [],
+        },
+        error: null,
+      });
+      mockHeartbeat.mockResolvedValue({ data: { success: true }, error: null });
+      mockCheckpoint.mockResolvedValue({ data: { success: true, acceptedCount: 10 }, error: null });
+      mockYield.mockResolvedValue(true);
+      mockDispatch.mockResolvedValue({ success: true, reason: "enqueued" });
+
+      const result = await executeGenerationStep({ jobId, workerId: "worker-1" });
+      expect(result.success).toBe(true);
+      expect(result.done).toBe(false);
+      expect(mockYield).toHaveBeenCalledWith({ jobId, leaseOwner: "worker-1", fencingToken: 4 });
+      expect(mockDispatch).toHaveBeenCalledWith(jobId);
+      expect(mockCheckpoint.mock.invocationCallOrder[0]).toBeLessThan(mockYield.mock.invocationCallOrder[0]);
+      expect(mockYield.mock.invocationCallOrder[0]).toBeLessThan(mockDispatch.mock.invocationCallOrder[0]);
+      vi.unstubAllEnvs();
+    });
+  });
+});

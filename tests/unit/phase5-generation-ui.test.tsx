@@ -52,6 +52,9 @@ describe("Phase 5: Premium Generation UI & Navigation-Safe Tasks", () => {
       expect(getStageDescription("queued", "flashcards", 0, 15)).toBe(
         "FETCH is finding a worker. You can leave this page anytime."
       );
+      expect(getStageDescription("claimed", "flashcards", 0, 15)).toBe(
+        "A worker has started your generation..."
+      );
       expect(getStageDescription("batching", "flashcards", 5, 15)).toBe(
         "Generating items in batches (5 of 15 accepted)..."
       );
@@ -62,7 +65,7 @@ describe("Phase 5: Premium Generation UI & Navigation-Safe Tasks", () => {
         "Saving StudyPack to your library..."
       );
       expect(getStageDescription("retrying", "flashcards", 8, 15)).toBe(
-        "Provider connection recovered; continuing generation..."
+        "A provider request needs another attempt. FETCH will retry automatically..."
       );
     });
 

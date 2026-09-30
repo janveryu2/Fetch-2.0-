@@ -382,7 +382,7 @@ export interface GenerationJobStatusData {
   artifactKind: "quiz" | "flashcards" | "summary";
   requestedCount: number;
   acceptedCount: number;
-  stage: "queued" | "extracting" | "batching" | "grounding" | "finalizing" | "completed" | "failed" | "cancelled";
+  stage: "queued" | "claimed" | "extracting" | "batching" | "grounding" | "finalizing" | "retrying" | "completed" | "failed" | "cancelled";
   status: "in_progress" | "completed" | "failed" | "cancelled";
   cancelRequested: boolean;
   failureCode?: string | null;
@@ -852,6 +852,50 @@ export async function claimGenerationStepServer(params: {
   }
 }
 
+export async function configureGenerationDispatchServer(targetUrl: string) {
+  const client = getPrivilegedSupabaseClient();
+  if (!client) return { success: false, error: "Service role is not configured" };
+  const { data, error } = await client.rpc("configure_generation_dispatch", {
+    p_target_url: targetUrl,
+  });
+  return { success: data === true && !error, error: error?.message };
+}
+
+export async function dispatchGenerationJobServer(jobId: string) {
+  const client = getPrivilegedSupabaseClient();
+  if (!client) return { success: false, reason: "Service role is not configured" };
+  const { data, error } = await client.rpc("dispatch_generation_job", { p_job_id: jobId });
+  const result = data as { success?: boolean; reason?: string } | null;
+  return {
+    success: result?.success === true && !error,
+    reason: error?.message || result?.reason || "Dispatch failed",
+  };
+}
+
+export async function authorizeGenerationDispatchServer(token: string) {
+  const client = getPrivilegedSupabaseClient();
+  if (!client || !token) return false;
+  const { data, error } = await client.rpc("authorize_generation_dispatch", {
+    p_token: token,
+  });
+  return !error && data === true;
+}
+
+export async function yieldGenerationStepServer(params: {
+  jobId: string;
+  leaseOwner: string;
+  fencingToken: number;
+}) {
+  const client = getPrivilegedSupabaseClient();
+  if (!client) return false;
+  const { data, error } = await client.rpc("yield_generation_step", {
+    p_job_id: params.jobId,
+    p_lease_owner: params.leaseOwner,
+    p_fencing_token: params.fencingToken,
+  });
+  return !error && data === true;
+}
+
 export async function heartbeatGenerationJobServer(params: {
   jobId: string;
   leaseOwner: string;
@@ -1005,6 +1049,5 @@ export async function recordGenerationRetryServer(params: {
     };
   }
 }
-
 
 

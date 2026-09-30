@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { getAuthenticatedRequestContext } from "@/lib/supabase/authorization";
-import { startGenerationJobServer } from "@/lib/server/privileged-supabase";
+import { configureGenerationDispatchServer, startGenerationJobServer } from "@/lib/server/privileged-supabase";
 import { dispatchGenerationWakeup } from "@/lib/ai/durable-generation";
 import { createApiErrorResponse } from "@/lib/api-errors";
 
@@ -110,6 +110,18 @@ export async function POST(request: Request) {
     )
     .digest("hex");
 
+  // Register the trusted production origin before reserving quota. An absent
+  // dispatcher must fail admission instead of leaving another queued job.
+  const targetUrl = process.env.FETCH_WORKER_BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_ENV === "preview" ? "" : new URL(request.url).origin);
+  const configured = await configureGenerationDispatchServer(targetUrl);
+  if (!configured.success) {
+    console.error(`[Generation] Dispatcher configuration failed: ${configured.error}`);
+    return createApiErrorResponse("DISPATCH_UNAVAILABLE", "FETCH couldn't start generation. Please retry.", 503);
+  }
+
   // Start generation job atomically with quota check
   const startResult = await startGenerationJobServer({
     ownerId: account.userId,
@@ -154,10 +166,16 @@ export async function POST(request: Request) {
 
   const { jobId, status, stage, reused } = startResult.data;
 
-  // If not reused and in_progress, trigger the best-effort post-commit wake-up
-  // Supabase Cron sweep runs every minute as the authoritative background recovery backstop
-  if (!reused && status === "in_progress") {
-    dispatchGenerationWakeup(jobId);
+  // Attempt the immediate database wakeup before responding. An ambiguous
+  // dispatch response must not release a job that a worker may already own;
+  // cron will retry it and fail it after the bounded startup window.
+  let dispatchPending = false;
+  if (status === "in_progress") {
+    const dispatch = await dispatchGenerationWakeup(jobId);
+    if (!dispatch.success) {
+      dispatchPending = true;
+      console.error(`[Generation ${jobId}] Dispatch failed: ${dispatch.reason}`);
+    }
   }
 
   return Response.json(
@@ -166,6 +184,7 @@ export async function POST(request: Request) {
       status,
       stage,
       reused,
+      dispatchPending,
       createdAt: new Date().toISOString(),
     },
     { status: 202 }
