@@ -402,6 +402,9 @@ CRITICAL RULES:
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           generationConfig: {
             response_mime_type: "application/json",
+            thinkingConfig: m.startsWith("gemini-2.5-flash")
+              ? { thinkingBudget: 0 }
+              : { thinkingLevel: "low" },
             response_schema: {
               type: "OBJECT",
               properties: {
@@ -421,7 +424,9 @@ CRITICAL RULES:
               },
               required: ["flashcards"],
             },
-            maxOutputTokens: Math.max(1024, Math.min(8192, (params.count || 10) * 150)),
+            // maxOutputTokens also includes thought tokens. A small cap can
+            // truncate otherwise valid JSON before all cards are emitted.
+            maxOutputTokens: Math.max(8192, Math.min(16384, params.count * 350)),
           },
         }),
       });
@@ -431,7 +436,14 @@ CRITICAL RULES:
       }
 
       const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const candidate = data?.candidates?.[0];
+      if (candidate?.finishReason === "MAX_TOKENS") {
+        throw new Error(`Gemini ${m} response exceeded its output token limit.`);
+      }
+      const rawText = candidate?.content?.parts
+        ?.filter((part: { thought?: boolean; text?: string }) => !part.thought && typeof part.text === "string")
+        .map((part: { text: string }) => part.text)
+        .join("");
       if (!rawText) throw new Error("Empty response from Gemini.");
       const parsed = JSON.parse(rawText);
       interface RawCardData {

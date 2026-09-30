@@ -400,6 +400,9 @@ CRITICAL RULES:
             ],
             generationConfig: {
               response_mime_type: "application/json",
+              thinkingConfig: modelToUse.startsWith("gemini-2.5-flash")
+                ? { thinkingBudget: 0 }
+                : { thinkingLevel: "low" },
               response_schema: {
                 type: "OBJECT",
                 properties: {

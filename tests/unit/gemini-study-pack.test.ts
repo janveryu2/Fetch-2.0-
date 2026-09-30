@@ -225,7 +225,7 @@ describe("GeminiStudyPackProvider API", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const provider = new GeminiStudyPackProvider({ apiKey: "test-gemini-key" });
+    const provider = new GeminiStudyPackProvider({ apiKey: "test-gemini-key", model: "gemini-2.5-flash" });
     const result = await provider.generate({
       title: "Cell Biology",
       source,
@@ -233,6 +233,9 @@ describe("GeminiStudyPackProvider API", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: 0,
+    });
     expect(result).toHaveLength(1);
     expect(result[0].answer).toBe("Mitochondria");
     expect(result[0].prompt).toBe("What organelle produces adenosine triphosphate?");
