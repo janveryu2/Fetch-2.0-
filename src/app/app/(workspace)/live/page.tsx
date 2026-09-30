@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   Copy,
   RocketLaunch,
@@ -11,8 +12,12 @@ import {
   Trophy,
   CheckCircle,
   XCircle,
+  Globe,
+  Lock,
+  Lightbulb,
+  ArrowClockwise,
 } from "@phosphor-icons/react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -56,26 +61,67 @@ interface LiveRoomState {
   currentQuestion?: RoomQuestion | null;
 }
 
+interface LiveHome {
+  rooms: { roomId: string; packTitle: string; status: "lobby" | "active"; visibility: "public" | "private"; maxPlayers: number; playerCount: number; isMember: boolean }[];
+  leaderboard: { userId: string; displayName: string; avatarUrl: string | null; score: number; roomsPlayed: number; accuracy: number }[];
+}
+
 export default function LivePage() {
   const { mode, packs } = useDemo();
   const [code, setCode] = useState("");
-  const [createdLocal, setCreatedLocal] = useState("");
   const [status, setStatus] = useState("");
-  const [selectedPackId, setSelectedPackId] = useState(packs[0]?.id || "");
+  const [chosenPackId, setChosenPackId] = useState("");
+  const eligiblePacks = packs.filter(pack => pack.questions.some(question => question.type === "multiple_choice"));
+  const selectedPackId = eligiblePacks.find(pack => pack.id === chosenPackId)?.id ?? eligiblePacks[0]?.id ?? "";
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [maxPlayers, setMaxPlayers] = useState(4);
+  const [period, setPeriod] = useState("week");
+  const [overview, setOverview] = useState<LiveHome | null>(null);
+  const [overviewError, setOverviewError] = useState("");
+  const [overviewLoading, setOverviewLoading] = useState(false);
 
   // Real room state for account mode
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<LiveRoomState | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const roomRef = useRef<string | null>(null);
+  const overviewRequest = useRef(0);
+
+  const refreshOverview = useCallback(async () => {
+    if (mode !== "account") return;
+    const requestId = ++overviewRequest.current;
+    setOverviewLoading(true);
+    try {
+      const response = await fetch(`/api/live/rooms?period=${period}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to load live rooms. Try again.");
+      const data: LiveHome = await response.json();
+      if (requestId !== overviewRequest.current) return;
+      setOverview(data);
+      setOverviewError("");
+    } catch (error) {
+      if (requestId === overviewRequest.current) setOverviewError(error instanceof Error ? error.message : "Unable to load live rooms.");
+    } finally {
+      if (requestId === overviewRequest.current) setOverviewLoading(false);
+    }
+  }, [mode, period]);
+
+  useEffect(() => {
+    const requestCounter = overviewRequest;
+    const frame = requestAnimationFrame(() => { void refreshOverview(); });
+    const interval = setInterval(() => { void refreshOverview(); }, 15000);
+    return () => { cancelAnimationFrame(frame); clearInterval(interval); requestCounter.current++; };
+  }, [refreshOverview]);
 
   // Poll room state while in an active or lobby room
   const fetchRoomState = useCallback(async (roomId: string) => {
     try {
-      const res = await fetch(`/api/live/rooms/${roomId}`);
+      const res = await fetch(`/api/live/rooms/${roomId}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        setRoomState(data);
+        if (roomRef.current === roomId) setRoomState(current => current?.roomId === roomId && current.version > data.version ? current : data);
+      } else if (roomRef.current === roomId) {
+        setStatus("Unable to load this room. Retry or return to Live home.");
       }
     } catch {
       // Ignore polling hiccups
@@ -126,15 +172,16 @@ export default function LivePage() {
       const res = await fetch("/api/live/rooms", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ packId: selectedPackId }),
+        body: JSON.stringify({ packId: selectedPackId, visibility, maxPlayers }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to create room.");
       }
       const data = await res.json();
+      roomRef.current = data.roomId;
       setActiveRoomId(data.roomId);
-      setStatus(`Room created! Share code ${data.joinCode} with friends.`);
+      setStatus(`Room created. Share code ${data.joinCode} with friends.`);
       await fetchRoomState(data.roomId);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Failed to create room.");
@@ -147,28 +194,53 @@ export default function LivePage() {
   async function handleJoinRoom(e: React.FormEvent) {
     e.preventDefault();
     if (code.length !== 6) return;
+    await joinRoom({ joinCode: code });
+  }
 
+  async function joinRoom(payload: { joinCode: string } | { roomId: string }) {
     setLoading(true);
     setStatus("");
     try {
       const res = await fetch("/api/live/rooms/join", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ joinCode: code }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to join room.");
       }
       const data = await res.json();
+      roomRef.current = data.roomId;
       setActiveRoomId(data.roomId);
-      setStatus("Joined room successfully!");
+      setStatus("Joined room.");
       await fetchRoomState(data.roomId);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Failed to join room.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function leaveRoom() {
+    if (!activeRoomId) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/live/rooms/${activeRoomId}/action`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "leave" }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Unable to leave room. Try again.");
+      }
+      roomRef.current = null;
+      setActiveRoomId(null);
+      setRoomState(null);
+      setStatus("Left room.");
+      void refreshOverview();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to leave room.");
+    } finally { setLoading(false); }
   }
 
   // Host starts game
@@ -243,34 +315,21 @@ export default function LivePage() {
   }
 
   return (
-    <div className="workspace !max-w-[1080px]">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="page-title">
-              Study together.
-              <br />
-              Challenge each other.
-            </h1>
+    <div className="workspace workspace--wide live-refresh">
+      <header className="live-hero">
+        <div className="live-hero-copy">
+          <h1 className="page-title">Study together.<br /><span>Challenge each other.</span></h1>
+          <p className="page-description">Turn practice into a friendly live challenge with your study buddies.</p>
+          <div className="live-benefits">
+            <div><UsersThree size={24} /><span><strong>Real-time practice</strong><small>Study together live</small></span></div>
+            <div><Trophy size={24} /><span><strong>Friendly competition</strong><small>Stay motivated</small></span></div>
+            <div><CheckCircle size={24} /><span><strong>Learn together</strong><small>With friends by your side</small></span></div>
           </div>
-          <p className="page-description">
-            Turn practice into a friendly live challenge with your study buddies.
-          </p>
         </div>
-        <Image
-          src="/assets/mascot/fetch-active.png"
-          alt="FETCH ready for a challenge"
-          width={140}
-          height={140}
-          className="pixel-art hidden sm:block"
-        />
+        <Image src="/assets/mascot/fetch-active.png" alt="FETCH ready for a challenge" width={240} height={240} className="pixel-art live-hero-mascot" />
       </header>
-
-      {mode !== "account" && (
-        <p className="notice mt-6">
-          Local room preview · Sign in to host or join real-time multiplayer competitions with friends.
-        </p>
-      )}
+      {mode !== "account" && <p className="notice mt-5">Sign in to create rooms and study live with friends. <Link href="/app/start" className="underline">Sign in</Link></p>}
+      {activeRoomId && !roomState && <p role="status" className="notice mt-5">Loading your room… <Button variant="quiet" onClick={() => void fetchRoomState(activeRoomId)}>Retry loading</Button><Button variant="quiet" onClick={leaveRoom} disabled={loading}>Leave Room</Button></p>}
 
       {/* Active Game or Lobby View */}
       {roomState && activeRoomId ? (
@@ -302,10 +361,8 @@ export default function LivePage() {
               </Button>
               <Button
                 variant="quiet"
-                onClick={() => {
-                  setActiveRoomId(null);
-                  setRoomState(null);
-                }}
+                onClick={leaveRoom}
+                disabled={loading}
                 className="text-xs"
               >
                 Leave Room
@@ -481,12 +538,12 @@ export default function LivePage() {
                       key={m.userId}
                       className={`flex items-center justify-between p-3 rounded-lg text-sm ${
                         idx === 0
-                          ? "bg-amber-50 border border-amber-200 font-bold"
+                          ? "bg-[var(--surface-subtle)] border border-[var(--border-subtle)] font-bold"
                           : "bg-[var(--surface-subtle)]"
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm">{idx === 0 ? "👑" : `${idx + 1}.`}</span>
+                        <span className="font-mono text-sm">{idx + 1}</span>
                         <UserAvatar
                           src={m.avatarUrl}
                           alt={m.displayName}
@@ -506,10 +563,8 @@ export default function LivePage() {
 
               <Button
                 className="mt-6 w-full"
-                onClick={() => {
-                  setActiveRoomId(null);
-                  setRoomState(null);
-                }}
+                onClick={leaveRoom}
+                disabled={loading}
               >
                 Back to Live Home
               </Button>
@@ -517,136 +572,38 @@ export default function LivePage() {
           )}
         </div>
       ) : (
-        /* Create & Join Grid */
-        <div className="mt-6 grid gap-5 md:grid-cols-2">
-          {/* Create Room Section */}
-          <section className="surface-card flex min-h-80 flex-col p-6">
-            <RocketLaunch size={30} className="text-[var(--fetch-blue-700)]" />
-            <h2 className="font-display mt-5 text-2xl font-semibold">
-              Create a room
-            </h2>
-            <p className="mt-2 text-[var(--text-secondary)] text-sm">
-              {mode === "account"
-                ? "Select a StudyPack and challenge your friends in real-time."
-                : "Try generating and copying a local room code in demo mode."}
-            </p>
-
-            {mode === "account" ? (
-              <div className="mt-4 flex flex-col gap-3 flex-1 justify-between">
-                <div>
-                  <label className="field-label">
-                    Select StudyPack
-                    <select
-                      className="field mt-1.5"
-                      value={selectedPackId}
-                      onChange={(e) => setSelectedPackId(e.target.value)}
-                    >
-                      {packs.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <Button
-                  className="mt-4 self-start"
-                  onClick={handleCreateRoom}
-                  disabled={loading || packs.length === 0}
-                >
-                  Create Live Room
-                </Button>
-              </div>
-            ) : createdLocal ? (
-              <div className="mt-6 rounded-xl bg-[var(--surface-subtle)] p-4">
-                <p className="text-xs font-bold text-[var(--text-secondary)]">
-                  LOCAL ROOM CODE
-                </p>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="select-all font-display text-3xl tracking-widest">
-                    {createdLocal}
-                  </span>
-                  <button
-                    aria-label="Copy room code"
-                    className="flex size-11 items-center justify-center"
-                    onClick={() => copyCode(createdLocal)}
-                  >
-                    <Copy size={23} />
-                  </button>
-                </div>
-                <Button
-                  className="mt-4"
-                  variant="quiet"
-                  onClick={() => {
-                    setCreatedLocal("");
-                    setStatus("Local room closed.");
-                  }}
-                >
-                  Close local room
-                </Button>
-              </div>
-            ) : (
-              <Button
-                className="mt-auto self-start"
-                onClick={() => {
-                  setCreatedLocal(
-                    Array.from(
-                      crypto.getRandomValues(new Uint8Array(6)),
-                      (n) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n % 31],
-                    ).join("")
-                  );
-                  setStatus("Local code created. Sign in to enable multiplayer connection.");
-                }}
-              >
-                Create a room
-              </Button>
-            )}
+        <div className="live-actions">
+          <section className="surface-card live-panel">
+            <div className="live-panel-heading"><span className="live-icon"><RocketLaunch size={28} /></span><div><h2>Create a room</h2><p>Select a StudyPack and set up your live study session.</p></div></div>
+            <label className="field-label live-pack-label">Select StudyPack
+              <select className="field mt-2" value={selectedPackId} onChange={e => setChosenPackId(e.target.value)} disabled={mode !== "account" || !eligiblePacks.length}>
+                {!eligiblePacks.length && <option value="">No eligible quizzes yet</option>}
+                {eligiblePacks.map(pack => <option key={pack.id} value={pack.id}>{pack.title}</option>)}
+              </select>
+            </label>
+            {!eligiblePacks.length && <p className="live-help">Live rooms need a quiz with multiple-choice questions. <Link href="/app/home" className="underline">Create a quiz</Link> to get started.</p>}
+            <div className="live-settings">
+              <fieldset><legend>Room privacy</legend><div className="live-choice-group">
+                {(["public", "private"] as const).map(value => <label key={value} className="live-choice" data-selected={visibility === value}>
+                  <input type="radio" name="visibility" value={value} checked={visibility === value} onChange={() => setVisibility(value)} />
+                  {value === "public" ? <Globe size={22} /> : <Lock size={22} />}<span><strong>{value === "public" ? "Public" : "Private"}</strong><small>{value === "public" ? "Anyone can join" : "Code invitation only"}</small></span>
+                </label>)}
+              </div></fieldset>
+              <fieldset><legend>Max players</legend><div className="live-choice-group">
+                {[2, 4, 6].map(value => <label key={value} className="live-choice live-capacity" data-selected={maxPlayers === value}>
+                  <input type="radio" name="maxPlayers" value={value} checked={maxPlayers === value} onChange={() => setMaxPlayers(value)} aria-label={`${value} players`} /><UsersThree size={18} /><strong>{value}</strong>
+                </label>)}
+              </div></fieldset>
+            </div>
+            <Button onClick={handleCreateRoom} disabled={mode !== "account" || loading || !!activeRoomId || !selectedPackId} className="live-create-button"><RocketLaunch />{loading ? "Connecting…" : "Create Live Room"}</Button>
           </section>
-
-          {/* Join Room Section */}
-          <section className="surface-card p-6">
-            <UsersThree size={30} className="text-[var(--fetch-blue-700)]" />
-            <h2 className="font-display mt-5 text-2xl font-semibold">
-              Join a room
-            </h2>
-            <p className="mt-2 text-[var(--text-secondary)] text-sm">
-              Enter the 6-character code provided by your study buddy.
-            </p>
-            <form onSubmit={mode === "account" ? handleJoinRoom : (e) => {
-              e.preventDefault();
-              setStatus(
-                code === createdLocal && createdLocal
-                  ? "Local preview code matched. Sign in for live multiplayer (No multiplayer connection in demo)."
-                  : "Code not found in local preview."
-              );
-            }}>
-              <label className="field-label mt-5">
-                Room code
-                <input
-                  className="field text-center text-xl font-extrabold tracking-widest"
-                  value={code}
-                  onChange={(e) =>
-                    setCode(
-                      e.target.value
-                        .toUpperCase()
-                        .replace(/[^A-Z0-9]/g, "")
-                        .slice(0, 6)
-                    )
-                  }
-                  maxLength={6}
-                  placeholder="ABC123"
-                />
-              </label>
-              <Button
-                className="mt-5"
-                type="submit"
-                aria-label="Check room code"
-                disabled={code.length !== 6 || loading}
-              >
-                <SignIn />
-                Join Room
-              </Button>
+          <section className="surface-card live-panel">
+            <div className="live-panel-heading"><span className="live-icon"><UsersThree size={28} /></span><div><h2>Join a room</h2><p>Enter the 6-character code provided by your study buddy.</p></div></div>
+            <form onSubmit={handleJoinRoom} className="live-join-form">
+              <label className="field-label">Room code<input className="field live-code" value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} maxLength={6} placeholder="ABC123" autoCapitalize="characters" autoComplete="off" spellCheck={false} /></label>
+              <Button type="submit" disabled={mode !== "account" || code.length !== 6 || loading || !!activeRoomId}><SignIn />Join Room</Button>
             </form>
+            <p className="live-help">Public rooms appear below. Private rooms are available to invited players with the room code.</p>
           </section>
         </div>
       )}
@@ -660,14 +617,28 @@ export default function LivePage() {
         </p>
       )}
 
-      <section className="mt-7 border-t border-[var(--border-subtle)] pt-6">
-        <h2 className="font-display text-xl font-semibold">
-          Synchronized Practice & Live Leaderboard
-        </h2>
-        <p className="mt-2 text-[var(--text-secondary)]">
-          Real-time rooms evaluate responses on the server clock, prevent answer tampering, and stream synchronized results to all participants.
-        </p>
-      </section>
+      {!activeRoomId && <>
+        {overviewError && <p role="status" className="notice mt-4">{overviewError} <Button variant="quiet" onClick={() => void refreshOverview()}>Retry</Button></p>}
+        <div className="live-bottom-grid" aria-busy={overviewLoading}>
+          <section className="surface-card live-panel">
+            <div className="live-section-heading"><Trophy size={24} /><div><h2>Live Leaderboard</h2><p>Completed public sessions</p></div><label className="sr-only" htmlFor="live-period">Leaderboard period</label><select id="live-period" className="field live-period" value={period} onChange={e => setPeriod(e.target.value)}><option value="today">Today</option><option value="week">This week</option><option value="all">All time</option></select></div>
+            {overview?.leaderboard.length ? <ol className="live-leaderboard">{overview.leaderboard.map((entry, index) => <li key={entry.userId}>
+              <span className="live-rank">{index + 1}</span><UserAvatar src={entry.avatarUrl} alt="" size={34} className="size-9 rounded-full" /><div className="live-row-copy"><strong>{entry.displayName}</strong><small>{entry.roomsPlayed} {entry.roomsPlayed === 1 ? "room" : "rooms"} · {entry.accuracy}% accuracy</small><div className="live-score-bar"><span style={{ width: `${Math.max(2, entry.score / Math.max(1, overview.leaderboard[0].score) * 100)}%` }} /></div></div><strong>{entry.score} pts</strong>
+            </li>)}</ol> : <p className="live-empty">{mode !== "account" ? "Sign in to see public session scores." : overviewLoading && !overview ? "Loading leaderboard…" : overviewError ? "Leaderboard unavailable." : "No completed public sessions in this period. Finish a public session to appear here."}</p>}
+          </section>
+          <section className="surface-card live-panel">
+            <div className="live-section-heading"><UsersThree size={24} /><div><h2>Active Study Rooms</h2><p>Join a room and study together</p></div><button type="button" className="live-refresh-button" aria-label="Refresh active rooms" onClick={() => void refreshOverview()} disabled={mode !== "account" || overviewLoading}><ArrowClockwise size={20} /></button></div>
+            {overview?.rooms.length ? <ul className="live-room-list">{overview.rooms.map(room => <li key={room.roomId}>
+              <span className="live-icon">{room.visibility === "private" ? <Lock size={22} /> : <UsersThree size={22} />}</span><div className="live-row-copy"><strong>{room.packTitle}</strong><small>{room.playerCount}/{room.maxPlayers} players · {room.visibility === "private" ? "Private" : "Public"}</small><Badge tone={room.status === "active" ? "success" : "neutral"}>{room.status === "active" ? "In progress" : room.playerCount >= room.maxPlayers ? "Full" : "Waiting for players"}</Badge></div>
+              <Button size="sm" disabled={loading || (!room.isMember && (room.status !== "lobby" || room.playerCount >= room.maxPlayers))} onClick={() => { if (room.isMember) { roomRef.current = room.roomId; setActiveRoomId(room.roomId); void fetchRoomState(room.roomId); } else { void joinRoom({ roomId: room.roomId }); } }}>{room.isMember ? "Resume" : "Join"}</Button>
+            </li>)}</ul> : <p className="live-empty">{mode !== "account" ? "Sign in to discover public study rooms." : overviewLoading && !overview ? "Loading rooms…" : overviewError ? "Room directory unavailable." : "No open rooms yet. Create a public room or join a friend's code."}</p>}
+          </section>
+          <section className="surface-card live-panel live-how-to">
+            <div className="live-section-heading"><Lightbulb size={24} /><div><h2>How it works</h2><p>Practice together. Track your progress.</p></div></div>
+            <ol>{[["Create or join a room", "Pick a quiz and invite friends, join a public room, or enter a room code."], ["Practice together live", "The host starts the session. Everyone answers the same questions."], ["See results", "Compare your scores at the end. Public sessions contribute to the leaderboard."]].map(([title, description], index) => <li key={title}><span>{index + 1}</span><div><strong>{title}</strong><p>{description}</p></div></li>)}</ol>
+          </section>
+        </div>
+      </>}
     </div>
   );
 }

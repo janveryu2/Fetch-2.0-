@@ -127,11 +127,10 @@ export default function PomodoroPage() {
 
   return (
     <div className="workspace workspace--wide pomodoro-refresh">
-      {/* Hero Banner with Mascot Artwork */}
-      <div className="pomodoro-hero relative flex flex-wrap items-center justify-between gap-6 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#F0F7FF] via-[#E4EFFF] to-[#CDE2FD] p-6 sm:p-8 shadow-xs">
-        <div className="relative z-10 max-w-[580px]">
-          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[var(--text-primary)]">
-            Pomodoro timer
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title">
+            Pomodoro Timer
           </h1>
           <p className="page-description mt-2 text-sm sm:text-base text-[var(--text-secondary)]">
             Focus on one task, then take a short break.
@@ -141,14 +140,14 @@ export default function PomodoroPage() {
         <Button
           asChild
           variant="secondary"
-          className="relative z-10 rounded-xl font-bold shadow-xs"
+          className="rounded-xl font-bold"
         >
           <Link href="/app/music">
             <MusicNotes weight="bold" />
             Music Studio &rarr;
           </Link>
         </Button>
-      </div>
+      </header>
 
       {/* Main Grid: Stage (left) + Settings (right) */}
       <div className="mt-5 grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">

@@ -115,15 +115,15 @@ export default function MusicPage() {
       {/* Hero Banner with Mascot Artwork & Benefits */}
       <div className="music-hero relative flex flex-wrap items-start justify-between gap-6 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#F0F7FF] via-[#E4EFFF] to-[#CDE2FD] p-6 sm:p-8 shadow-xs">
         <div className="relative z-10 max-w-[620px]">
-          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[#0F264A] dark:text-white">
-            Your space to tune in. 🎵
+          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[var(--text-primary)]">
+            Your space to tune in.
           </h1>
-          <p className="page-description mt-2 text-sm sm:text-base text-[#38557D] dark:text-blue-100">
+          <p className="page-description mt-2 text-sm sm:text-base text-[var(--text-secondary)]">
             Study with music. Find your focus. Keep the good vibes going.
           </p>
 
           <div className="music-benefits mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-[var(--surface-card)] dark:border-[var(--border-subtle)] p-3 shadow-xs backdrop-blur-xs">
+            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-[#1068E9]">
                 <Headphones size={22} weight="bold" />
               </span>
@@ -132,7 +132,7 @@ export default function MusicPage() {
                 <small className="block text-[11px] text-[var(--text-secondary)]">Music that helps you concentrate</small>
               </div>
             </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-[var(--surface-card)] dark:border-[var(--border-subtle)] p-3 shadow-xs backdrop-blur-xs">
+            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-600">
                 <Brain size={22} weight="bold" />
               </span>
@@ -141,7 +141,7 @@ export default function MusicPage() {
                 <small className="block text-[11px] text-[var(--text-secondary)]">Calming sounds for study time</small>
               </div>
             </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/80 dark:bg-[var(--surface-card)] dark:border-[var(--border-subtle)] p-3 shadow-xs backdrop-blur-xs">
+            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-500">
                 <Heart size={22} weight="bold" />
               </span>

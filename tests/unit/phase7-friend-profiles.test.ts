@@ -156,7 +156,9 @@ describe("Phase 7: Friend Profiles, Messaging & Live Completion", () => {
       const body = await res.json();
       expect(body.roomId).toBe("room-abc-123");
       expect(body.joinCode).toBe("7K9M2P");
-      expect(mockRpc).toHaveBeenCalledWith("create_live_room", {
+      expect(mockRpc).toHaveBeenCalledWith("create_live_room_configured", {
+        p_visibility: "private",
+        p_max_players: 4,
         p_pack_id: "11111111-1111-4111-8111-111111111111",
         p_artifact_id: "22222222-2222-4222-8222-222222222222",
       });

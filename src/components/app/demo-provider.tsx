@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { CalendarEvent, StudyAttempt, StudyPack } from "@/lib/demo-types";
@@ -24,6 +25,7 @@ export type DemoState = {
   attempts: StudyAttempt[];
   events: CalendarEvent[];
   retryLoad: () => void;
+  syncPack: (packId: string) => Promise<StudyPack>;
   addPack: (pack: StudyPack) => void;
   addAttempt: (attempt: StudyAttempt) => void;
   addEvent: (event: CalendarEvent) => void;
@@ -51,6 +53,8 @@ export function DemoProvider({
   const [syncError, setSyncError] = useState("");
   const [storageWarning, setStorageWarning] = useState("");
   const [reloadTrigger, setReloadTrigger] = useState(0);
+  const packVersion = useRef(0);
+  const packUpdates = useRef(new Map<string, number>());
 
   const retryLoad = useCallback(() => {
     setStatus("loading");
@@ -61,6 +65,7 @@ export function DemoProvider({
   useEffect(() => {
     let active = true;
     if (mode === "account") {
+      const readVersion = packVersion.current;
       void fetch("/api/workspace", { cache: "no-store" })
         .then(async (response) => {
           const data = (await response.json()) as {
@@ -71,7 +76,13 @@ export function DemoProvider({
           };
           if (!response.ok) throw new Error(data.error || "Your account data could not be loaded.");
           if (!active) return;
-          setPacks(data.packs ?? []);
+          // Retain only mutations newer than this read; explicit reloads can still
+          // remove records no longer present on the server.
+          const updatedIds = new Set([...packUpdates.current].filter(([, version]) => version > readVersion).map(([id]) => id));
+          setPacks((current) => [
+            ...current.filter((pack) => updatedIds.has(pack.id)),
+            ...(data.packs ?? []).filter((pack) => !updatedIds.has(pack.id)),
+          ]);
           setAttempts(data.attempts ?? []);
           setEvents(data.events ?? []);
           setSyncError("");
@@ -144,9 +155,21 @@ export function DemoProvider({
   }, [attempts, events, mode, packs, status]);
 
   const addPack = useCallback(
-    (pack: StudyPack) => setPacks((current) => [pack, ...current]),
+    (pack: StudyPack) => {
+      packUpdates.current.set(pack.id, ++packVersion.current);
+      setPacks((current) => [pack, ...current.filter((item) => item.id !== pack.id)]);
+    },
     [],
   );
+  const syncPack = useCallback(async (packId: string) => {
+    const response = await fetch(`/api/workspace?packId=${encodeURIComponent(packId)}`, { cache: "no-store" });
+    const data = await response.json() as { error?: string; packs?: StudyPack[] };
+    if (!response.ok) throw new Error(data.error || "Your saved StudyPack could not be loaded.");
+    const pack = data.packs?.find((item) => item.id === packId);
+    if (!pack) throw new Error("Your StudyPack is not available yet. Try loading it again.");
+    addPack(pack);
+    return pack;
+  }, [addPack]);
   const addAttempt = useCallback(
     (attempt: StudyAttempt) => setAttempts((current) => [attempt, ...current]),
     [],
@@ -178,6 +201,7 @@ export function DemoProvider({
       attempts,
       events,
       retryLoad,
+      syncPack,
       addPack,
       addAttempt,
       addEvent,
@@ -194,6 +218,7 @@ export function DemoProvider({
       attempts,
       events,
       retryLoad,
+      syncPack,
       addPack,
       addAttempt,
       addEvent,

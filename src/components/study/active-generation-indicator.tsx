@@ -5,6 +5,7 @@ import Link from "next/link";
 import { X, ArrowRight } from "@phosphor-icons/react";
 import { FetchLoadingMascot } from "@/components/study/fetch-loading-mascot";
 import { ElapsedTimer } from "@/components/study/elapsed-timer";
+import { useDemo } from "@/components/app/demo-provider";
 
 export interface ActiveJobData {
   jobId: string;
@@ -19,6 +20,7 @@ export interface ActiveJobData {
 }
 
 export function ActiveGenerationIndicator() {
+  const { mode, syncPack } = useDemo();
   const [activeJob, setActiveJob] = useState<ActiveJobData | null>(null);
   const [completedNotice, setCompletedNotice] = useState<{
     jobId: string;
@@ -28,12 +30,18 @@ export function ActiveGenerationIndicator() {
   } | null>(null);
 
   const announcedJobIds = useRef<Set<string>>(new Set());
+  const activeJobRef = useRef<ActiveJobData | null>(null);
+  const activeJobId = activeJob?.jobId;
 
   useEffect(() => {
+    if (mode !== "account") return;
     let mounted = true;
     let timer: NodeJS.Timeout | null = null;
+    let polling = false;
 
     async function checkJobs() {
+      if (polling) return;
+      polling = true;
       try {
         const res = await fetch("/api/generate/jobs?active=1");
         if (!res.ok) return;
@@ -46,40 +54,35 @@ export function ActiveGenerationIndicator() {
         );
 
         if (running) {
+          activeJobRef.current = running;
           setActiveJob(running);
         } else {
-          // If we had an active job that is now gone/completed
-          setActiveJob((prev) => {
-            if (prev && !announcedJobIds.current.has(prev.jobId)) {
-              // Fetch latest status of this previous job to see if completed
-              fetch(`/api/generate/job/${prev.jobId}`)
-                .then((r) => r.json())
-                .then((jobDetails) => {
-                  if (jobDetails && jobDetails.status === "completed") {
-                    announcedJobIds.current.add(prev.jobId);
-                    setCompletedNotice({
-                      jobId: prev.jobId,
-                      title: prev.title,
-                      packId: jobDetails.packId,
-                      count: jobDetails.acceptedCount || prev.requestedCount,
-                    });
-                  }
-                })
-                .catch(() => {});
+          const previous = activeJobRef.current;
+          if (previous && !announcedJobIds.current.has(previous.jobId)) {
+            const response = await fetch(`/api/generate/job/${previous.jobId}`, { cache: "no-store" });
+            if (!response.ok) return;
+            const jobDetails = await response.json();
+            if (jobDetails.status === "completed" && jobDetails.packId) {
+              await syncPack(jobDetails.packId);
+              if (!mounted) return;
+              announcedJobIds.current.add(previous.jobId);
+              setCompletedNotice({ jobId: previous.jobId, title: previous.title, packId: jobDetails.packId, count: jobDetails.acceptedCount || previous.requestedCount });
             }
-            return null;
-          });
+          }
+          if (!mounted) return;
+          activeJobRef.current = null;
+          setActiveJob(null);
         }
       } catch {
         // Best effort poll
-      }
+      } finally { polling = false; }
     }
 
     // Initial check
     checkJobs();
 
     // Fast poll when an active job is present, slower otherwise
-    const intervalMs = activeJob ? 2500 : 15000;
+    const intervalMs = activeJobId ? 2500 : 15000;
     timer = setInterval(checkJobs, intervalMs);
 
     function onVisibilityChange() {
@@ -97,7 +100,7 @@ export function ActiveGenerationIndicator() {
       window.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("focus", checkJobs);
     };
-  }, [activeJob]);
+  }, [activeJobId, mode, syncPack]);
 
   return (
     <>

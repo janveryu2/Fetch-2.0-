@@ -19,7 +19,9 @@ import { Button } from "@/components/ui/button";
 import { SummaryViewer } from "@/components/study/summary-viewer";
 
 export function StudyPackDetail({ packId }: { packId: string }) {
-  const { packs, attempts, mode, userId } = useDemo();
+  const { packs, attempts, mode, userId, status: workspaceStatus, syncPack } = useDemo();
+  const [packLoadError, setPackLoadError] = useState("");
+  const [packRetry, setPackRetry] = useState(0);
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [hasActiveDraft, setHasActiveDraft] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: string; kind: string; title: string }>>([]);
@@ -28,6 +30,14 @@ export function StudyPackDetail({ packId }: { packId: string }) {
 
   const lastAttempt = attempts.find((item) => item.packId === packId);
   const pack = packs.find((item) => item.id === packId);
+  useEffect(() => {
+    if (mode !== "account" || pack || workspaceStatus === "loading") return;
+    let active = true;
+    void syncPack(packId).catch((reason: unknown) => {
+      if (active) setPackLoadError(reason instanceof Error ? reason.message : "This StudyPack could not be loaded.");
+    });
+    return () => { active = false; };
+  }, [mode, pack, packId, workspaceStatus, syncPack, packRetry]);
 
   useEffect(() => {
     if (mode === "account") {
@@ -84,17 +94,19 @@ export function StudyPackDetail({ packId }: { packId: string }) {
           className="pixel-art w-[170px]"
         />
         <h1 className="font-display mt-5 text-3xl font-semibold">
-          Looking for your StudyPack
+          {packLoadError ? "StudyPack unavailable" : "Loading your StudyPack"}
         </h1>
         <p className="mt-2 text-[var(--text-secondary)]">
-          If you refreshed, the local fixture may still be loading. Return to
-          the list and try again.
+          {packLoadError || (mode === "account" ? "Loading your saved study material." : workspaceStatus === "loading" ? "Loading your study material." : "This StudyPack is not saved in this browser.")}
         </p>
         <Button asChild variant="secondary" className="mt-6">
           <Link href="/app/study-packs">
             <ArrowLeft /> StudyPacks
           </Link>
         </Button>
+        {mode === "account" && packLoadError && (
+          <Button className="mt-3" onClick={() => { setPackLoadError(""); setPackRetry((value) => value + 1); }}>Retry loading</Button>
+        )}
       </div>
     );
   }

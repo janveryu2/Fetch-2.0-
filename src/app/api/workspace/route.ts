@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { getAuthenticatedRequestContext, unauthorizedResponse } from "@/lib/supabase/authorization";
 import { extractRequestId, logger } from "@/lib/server/logger";
+import { z } from "zod";
 
 type WorkspaceQuestionRow = {
   id: string;
@@ -21,15 +22,19 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "50", 10) || 50, 1), 100);
   const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10) || 0, 0);
+  const packId = searchParams.get("packId");
+  if (packId && !z.string().uuid().safeParse(packId).success) {
+    return Response.json({ error: "Invalid StudyPack ID." }, { status: 400 });
+  }
+  let packsQuery = supabase.from("study_packs")
+    .select("id,title,source_type,source_label,status,created_at")
+    .eq("owner_id", userId).eq("status", "ready");
+  if (packId) packsQuery = packsQuery.eq("id", packId);
 
   const [packResult, attemptResult, eventResult] = await Promise.all([
-    supabase
-      .from("study_packs")
-      .select("id,title,source_type,source_label,status,created_at")
-      .eq("owner_id", userId)
-      .eq("status", "ready")
+    packsQuery
       .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1),
+      .range(packId ? 0 : offset, packId ? 0 : offset + limit - 1),
     supabase
       .from("study_sessions")
       .select("id,pack_id,score,correct_count,question_count,completed_at")
@@ -151,6 +156,7 @@ export async function GET(request: NextRequest) {
     headers: {
       "Content-Type": "application/json",
       "X-Request-Id": requestId,
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -22,6 +22,27 @@ vi.mock("@/lib/supabase/authorization", () => ({
     }),
 }));
 
+it("loads a newly saved pack by exact ID regardless of list pagination, while retaining ownership and ready filters", async () => {
+  const packId = "11111111-1111-4111-8111-111111111111";
+  const packsQuery = {
+    select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockResolvedValue({ data: [{ id: packId, title: "New pack", created_at: new Date().toISOString() }], error: null }),
+  };
+  const emptyQuery = {
+    select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), in: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue({ data: [], error: null }), data: [], error: null }),
+  };
+  mockGetAuthenticatedRequestContext.mockResolvedValueOnce({ userId: "pack-owner", supabase: { from: (table: string) => table === "study_packs" ? packsQuery : emptyQuery } });
+  const response = await getWorkspace(new NextRequest(`http://localhost/api/workspace?packId=${packId}&offset=500`));
+  expect(response.status).toBe(200);
+  expect(packsQuery.eq).toHaveBeenCalledWith("owner_id", "pack-owner");
+  expect(packsQuery.eq).toHaveBeenCalledWith("status", "ready");
+  expect(packsQuery.eq).toHaveBeenCalledWith("id", packId);
+  expect(packsQuery.range).toHaveBeenCalledWith(0, 0);
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect((await response.json()).packs[0].id).toBe(packId);
+});
+
 describe("Phase 13: Privacy-safe Structured Logging", () => {
   it("redacts sensitive fields from metadata", () => {
     const raw = {

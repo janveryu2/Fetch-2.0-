@@ -13,6 +13,7 @@ import {
   FloppyDisk,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { useDemo } from "@/components/app/demo-provider";
 
 interface CardEntry {
   front: string;
@@ -28,6 +29,7 @@ export function CreateManualDeckModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { syncPack, mode } = useDemo();
   const openerRef = useRef<HTMLElement | null>(null);
   const [title, setTitle] = useState("Custom Vocabulary");
   const [cards, setCards] = useState<CardEntry[]>([
@@ -99,6 +101,8 @@ export function CreateManualDeckModal({
         throw new Error(data.message || data.error || "Failed to create deck.");
       }
 
+      if (!data.packId) throw new Error("The saved deck did not return a StudyPack ID.");
+      if (mode === "account") await syncPack(data.packId);
       onClose();
       router.push(`/app/study-packs/${data.packId}`);
     } catch (err) {

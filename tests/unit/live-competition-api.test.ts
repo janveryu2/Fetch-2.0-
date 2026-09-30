@@ -8,7 +8,7 @@ vi.mock("@/lib/supabase/authorization", () => ({
     Response.json({ error: "Sign in to use account features.", code: "AUTH_REQUIRED" }, { status: 401 }),
 }));
 
-import { POST as createRoom } from "@/app/api/live/rooms/route";
+import { POST as createRoom, GET as getLiveHome } from "@/app/api/live/rooms/route";
 import { POST as joinRoom } from "@/app/api/live/rooms/join/route";
 import { GET as getRoomState } from "@/app/api/live/rooms/[roomId]/route";
 import { POST as handleRoomAction } from "@/app/api/live/rooms/[roomId]/action/route";
@@ -20,6 +20,41 @@ const VALID_ROOM_ID = "33333333-3333-4333-8333-333333333333";
 describe("Live Competition API Routes", () => {
   beforeEach(() => {
     mockGetAuth.mockReset();
+  });
+
+  it("loads authenticated real directory data without caching", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { rooms: [], leaderboard: [] }, error: null });
+    mockGetAuth.mockResolvedValue({ userId: VALID_USER_ID, supabase: { rpc } });
+    const response = await getLiveHome(new Request("http://localhost/api/live/rooms?period=today"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(rpc).toHaveBeenCalledWith("get_live_home", { p_period: "today" });
+  });
+
+  it("passes privacy/capacity to server and rejects unsupported limits", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { roomId: VALID_ROOM_ID }, error: null });
+    mockGetAuth.mockResolvedValue({ userId: VALID_USER_ID, supabase: { rpc } });
+    const request = (maxPlayers: number) => new Request("http://localhost/api/live/rooms", { method: "POST", body: JSON.stringify({ packId: VALID_PACK_ID, visibility: "public", maxPlayers }) });
+    expect((await createRoom(request(6))).status).toBe(201);
+    expect(rpc).toHaveBeenCalledWith("create_live_room_configured", { p_pack_id: VALID_PACK_ID, p_artifact_id: null, p_visibility: "public", p_max_players: 6 });
+    expect((await createRoom(request(8))).status).toBe(400);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("joins public rooms by ID through the guarded RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { roomId: VALID_ROOM_ID }, error: null });
+    mockGetAuth.mockResolvedValue({ userId: VALID_USER_ID, supabase: { rpc } });
+    const response = await joinRoom(new Request("http://localhost/api/live/rooms/join", { method: "POST", body: JSON.stringify({ roomId: VALID_ROOM_ID }) }));
+    expect(response.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("join_public_live_room", { p_room_id: VALID_ROOM_ID });
+  });
+
+  it("leaves through the server instead of clearing only client state", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { left: true }, error: null });
+    mockGetAuth.mockResolvedValue({ userId: VALID_USER_ID, supabase: { rpc } });
+    const response = await handleRoomAction(new Request("http://localhost", { method: "POST", body: JSON.stringify({ action: "leave" }) }), { params: Promise.resolve({ roomId: VALID_ROOM_ID }) });
+    expect(response.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("leave_live_room", { p_room_id: VALID_ROOM_ID });
   });
 
   describe("POST /api/live/rooms (Create Room)", () => {
@@ -56,8 +91,11 @@ describe("Live Competition API Routes", () => {
       expect(res.status).toBe(201);
       const json = await res.json();
       expect(json.joinCode).toBe("ABC789");
-      expect(mockRpc).toHaveBeenCalledWith("create_live_room", {
+      expect(mockRpc).toHaveBeenCalledWith("create_live_room_configured", {
         p_pack_id: VALID_PACK_ID,
+        p_artifact_id: null,
+        p_visibility: "private",
+        p_max_players: 4,
       });
     });
   });

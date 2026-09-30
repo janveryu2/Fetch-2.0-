@@ -30,6 +30,7 @@ function blank(date: string): CalendarEvent {
 export default function CalendarPage() {
   const { events, packs, addEvent, removeEvent, mode } = useDemo();
   const [anchor, setAnchor] = useState(() => localDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [view, setView] = useState<(typeof views)[number]>("Week");
   const [initialViewResolved, setInitialViewResolved] = useState(false);
   const [draft, setDraft] = useState<CalendarEvent | null>(null);
@@ -183,11 +184,18 @@ export default function CalendarPage() {
     }
   }
   function edit(event: CalendarEvent) {
+    setSelectedDate(event.date);
     setDraft({
       ...blank(event.date),
       ...event,
       allDay: event.allDay ?? !event.start,
     });
+    setError("");
+    setConfirmDelete(false);
+  }
+  function createOnDate(date: string) {
+    setSelectedDate(date);
+    setDraft(blank(date));
     setError("");
     setConfirmDelete(false);
   }
@@ -293,6 +301,7 @@ export default function CalendarPage() {
     <button
       key={event.id}
       onClick={() => edit(event)}
+      type="button"
       className="block w-full truncate rounded-md px-2 py-1 text-left text-xs font-bold text-white"
       style={{ background: event.color || colors[0] }}
       title={`${event.title} · ${event.allDay || !event.start ? "All day" : `${event.start}–${event.end}`}`}
@@ -535,12 +544,18 @@ export default function CalendarPage() {
                 {monthDays.map((d) => (
                   <div
                     key={localDate(d)}
-                    className={`min-h-28 border-t border-r border-[var(--border-subtle)] p-2 ${localDate(d) === today ? "bg-[var(--fetch-blue-50)]" : ""}`}
+                    data-date={localDate(d)}
+                    onClick={(event) => {
+                      if (!(event.target as HTMLElement).closest("button")) createOnDate(localDate(d));
+                    }}
+                    className={`calendar-month-cell relative min-h-28 cursor-pointer border-t border-r border-[var(--border-subtle)] p-2 hover:bg-[var(--surface-subtle)] ${localDate(d) === today ? "bg-[var(--fetch-blue-50)]" : ""} ${selectedDate === localDate(d) ? "ring-2 ring-inset ring-[var(--fetch-blue-500)]" : ""}`}
                   >
                     <button
                       aria-label={`Add event on ${localDate(d)}`}
-                      onClick={() => setDraft(blank(localDate(d)))}
-                      className={`mb-1 flex size-8 items-center justify-center rounded-full text-sm font-bold ${d.getMonth() !== date.getMonth() ? "text-[var(--text-tertiary)]" : ""}`}
+                      type="button"
+                      aria-current={localDate(d) === today ? "date" : undefined}
+                      onClick={() => createOnDate(localDate(d))}
+                      className={`mb-1 flex min-h-11 min-w-11 items-center justify-center rounded-full text-sm font-bold ${d.getMonth() !== date.getMonth() ? "text-[var(--text-tertiary)]" : ""}`}
                     >
                       {d.getDate()}
                     </button>

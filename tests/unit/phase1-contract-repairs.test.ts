@@ -22,7 +22,7 @@ describe("Phase 1 - Critical Truth & Contract Repairs", () => {
   });
 
   describe("Live Competition Contract", () => {
-    it("calls create_live_room with owner-validated pack ID and returns 201", async () => {
+    it("calls configured room creation with owner-validated pack ID and returns 201", async () => {
       const mockRpc = vi.fn().mockResolvedValue({
         data: {
           roomId: "44444444-4444-4444-8444-444444444444",
@@ -49,8 +49,11 @@ describe("Phase 1 - Critical Truth & Contract Repairs", () => {
       expect(res.status).toBe(201);
       const json = await res.json();
       expect(json.joinCode).toBe("ABC789");
-      expect(mockRpc).toHaveBeenCalledWith("create_live_room", {
+      expect(mockRpc).toHaveBeenCalledWith("create_live_room_configured", {
         p_pack_id: VALID_PACK_ID,
+        p_artifact_id: null,
+        p_visibility: "private",
+        p_max_players: 4,
       });
     });
 

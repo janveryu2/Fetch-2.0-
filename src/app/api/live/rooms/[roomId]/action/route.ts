@@ -3,6 +3,7 @@ import { getAuthenticatedRequestContext, unauthorizedResponse } from "@/lib/supa
 import { createApiErrorResponse } from "@/lib/api-errors";
 
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("leave") }),
   z.object({
     action: z.literal("start"),
   }),
@@ -36,6 +37,12 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const { action } = parsed.data;
+
+  if (action === "leave") {
+    const { data, error } = await context.supabase.rpc("leave_live_room", { p_room_id: roomId });
+    if (error) return createApiErrorResponse("INVALID_REQUEST", error.message, 400);
+    return Response.json(data);
+  }
 
   if (action === "start") {
     const { data, error } = await context.supabase.rpc("start_live_game", {

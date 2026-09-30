@@ -31,7 +31,7 @@ import { GenerationProgress } from "@/components/study/generation-progress";
 
 export function CreatePackPanel() {
   const router = useRouter();
-  const { addPack, mode } = useDemo();
+  const { addPack, mode, syncPack } = useDemo();
   const { preferences } = useStudentPreferences();
   const tabs = [
     { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
@@ -89,11 +89,27 @@ export function CreatePackPanel() {
       return;
     }
 
+    let active = true;
+    let polling = false;
     const interval = setInterval(async () => {
+      if (polling) return;
+      polling = true;
       try {
-        const res = await fetch(`/api/generate/job/${jobProgress.jobId}`);
+        const res = await fetch(`/api/generate/job/${jobProgress.jobId}`, { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
+        if (!active) return;
+        if (data.status === "completed") {
+          if (!data.packId) throw new Error("The completed job did not return a StudyPack ID.");
+          // Confirm the committed record and update the persistent client provider before routing.
+          await syncPack(data.packId);
+          if (!active) return;
+          clearInterval(interval);
+          setLoading(false);
+          setWarning("");
+          setRequestState(rotateRequestState());
+          router.push(`/app/study-packs/${data.packId}`);
+        }
         setJobProgress((prev) => ({
           jobId: data.jobId,
           stage: data.stage,
@@ -104,14 +120,7 @@ export function CreatePackPanel() {
           updatedAt: data.updatedAt || prev?.updatedAt || null,
         }));
 
-        if (data.status === "completed") {
-          clearInterval(interval);
-          setLoading(false);
-          const redirectId = data.packId;
-          if (redirectId) {
-            router.push(`/app/study-packs/${redirectId}`);
-          }
-        } else if (data.status === "failed") {
+        if (data.status === "failed") {
           clearInterval(interval);
           setLoading(false);
           setError(data.failureMessage || "Generation failed. Please retry.");
@@ -120,13 +129,15 @@ export function CreatePackPanel() {
           setLoading(false);
           setWarning("Generation was cancelled. Quota was not charged.");
         }
-      } catch {
-        // Polling tick retry
+      } catch (reason) {
+        if (active) setWarning(reason instanceof Error ? reason.message : "Reconnecting to load your StudyPack.");
+      } finally {
+        polling = false;
       }
     }, 1500);
 
-    return () => clearInterval(interval);
-  }, [jobProgress?.jobId, jobProgress?.stage, router]);
+    return () => { active = false; clearInterval(interval); };
+  }, [jobProgress?.jobId, jobProgress?.stage, router, syncPack]);
 
   async function cancelJob() {
     if (!jobProgress?.jobId) return;
