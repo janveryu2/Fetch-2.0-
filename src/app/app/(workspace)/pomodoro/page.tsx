@@ -29,11 +29,11 @@ import { playStudySound } from "@/lib/audio/sound-controller";
 import { cn } from "@/lib/cn";
 
 const STUDY_TIPS = [
-  "A 5-minute break can boost your focus and creativity.",
-  "Switching topics between sessions helps build stronger neural pathways.",
-  "Hydrating and standing up during breaks prevents screen fatigue.",
-  "Active recall with flashcards is 50% more effective than passive re-reading.",
-  "Consistent 25-minute sprints reduce procrastination and study burnout.",
+  "Stand up, stretch, and rest your eyes during a short break.",
+  "Try a flashcard before rereading your notes.",
+  "Choose one task before each focus session.",
+  "Get a glass of water before starting your next session.",
+  "Switch subjects between sessions to practice recall in a new context.",
 ];
 
 export default function PomodoroPage() {
@@ -51,7 +51,9 @@ export default function PomodoroPage() {
     resetTimer,
   } = useTimer();
   const { packs, attempts } = useDemo();
-  const [overridePermission, setOverridePermission] = useState<string | null>(null);
+  const [overridePermission, setOverridePermission] = useState<string | null>(
+    null,
+  );
   const [tipIndex, setTipIndex] = useState(0);
 
   const clientPermission = useSyncExternalStore(
@@ -61,51 +63,65 @@ export default function PomodoroPage() {
   );
   const notifPermission = overridePermission ?? clientPermission;
   const totalSeconds = timer.durations[timer.mode] * 60;
-  const progressPercent = Math.min(100, Math.max(0, ((totalSeconds - timer.remaining) / totalSeconds) * 100));
+  const isTimerPaused =
+    !timer.completed && !timer.endAt && timer.remaining < totalSeconds;
+  const progressPercent = Math.min(
+    100,
+    Math.max(0, ((totalSeconds - timer.remaining) / totalSeconds) * 100),
+  );
 
   // Compute completed sessions & streaks from real attempts and session state
-  const { completedTodayCount, streakDays, completedMinutesText } = useMemo(() => {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const todayAttempts = attempts.filter(
-      (a) => new Date(a.completedAt).getTime() >= startOfToday,
-    );
-    const count = todayAttempts.length + (timer.completed ? 1 : 0);
+  const { completedTodayCount, streakDays, completedMinutesText } =
+    useMemo(() => {
+      const now = new Date();
+      const startOfToday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+      ).getTime();
+      const todayAttempts = attempts.filter(
+        (a) => new Date(a.completedAt).getTime() >= startOfToday,
+      );
+      const count = todayAttempts.length + (timer.completed ? 1 : 0);
 
-    const dayTimestamps = Array.from(
-      new Set(
-        attempts.map((a) => {
-          const d = new Date(a.completedAt);
-          return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-        }),
-      ),
-    ).sort((a, b) => b - a);
+      const dayTimestamps = Array.from(
+        new Set(
+          attempts.map((a) => {
+            const d = new Date(a.completedAt);
+            return new Date(
+              d.getFullYear(),
+              d.getMonth(),
+              d.getDate(),
+            ).getTime();
+          }),
+        ),
+      ).sort((a, b) => b - a);
 
-    let streak = 0;
-    let checkDate = startOfToday;
-    const oneDay = 86400000;
+      let streak = 0;
+      let checkDate = startOfToday;
+      const oneDay = 86400000;
 
-    if (!dayTimestamps.includes(checkDate)) {
-      checkDate -= oneDay;
-    }
+      if (!dayTimestamps.includes(checkDate)) {
+        checkDate -= oneDay;
+      }
 
-    while (dayTimestamps.includes(checkDate)) {
-      streak++;
-      checkDate -= oneDay;
-    }
+      while (dayTimestamps.includes(checkDate)) {
+        streak++;
+        checkDate -= oneDay;
+      }
 
-    const minutes = count * timer.durations.Focus;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    const minutesText =
-      hours > 0 ? `That's ${hours}h ${mins}m` : `That's ${minutes}m`;
+      const minutes = count * timer.durations.Focus;
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      const minutesText =
+        hours > 0 ? `That's ${hours}h ${mins}m` : `That's ${minutes}m`;
 
-    return {
-      completedTodayCount: count,
-      streakDays: Math.max(1, streak),
-      completedMinutesText: minutesText,
-    };
-  }, [attempts, timer.completed, timer.durations.Focus]);
+      return {
+        completedTodayCount: count,
+        streakDays: Math.max(1, streak),
+        completedMinutesText: minutesText,
+      };
+    }, [attempts, timer.completed, timer.durations.Focus]);
 
   const goalSessions = 6;
 
@@ -114,24 +130,19 @@ export default function PomodoroPage() {
       {/* Hero Banner with Mascot Artwork */}
       <div className="pomodoro-hero relative flex flex-wrap items-center justify-between gap-6 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#F0F7FF] via-[#E4EFFF] to-[#CDE2FD] p-6 sm:p-8 shadow-xs">
         <div className="relative z-10 max-w-[580px]">
-          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[#0F264A] dark:text-white">
-            Focus today. <span className="text-[#1068E9] dark:text-[#4da3ff]">Brighter tomorrow.</span>
+          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[var(--text-primary)]">
+            Pomodoro timer
           </h1>
-          <p className="page-description mt-2 text-sm sm:text-base text-[#38557D] dark:text-blue-100">
-            Small steps, big progress. Stay focused, take breaks, and keep going!
+          <p className="page-description mt-2 text-sm sm:text-base text-[var(--text-secondary)]">
+            Focus on one task, then take a short break.
           </p>
         </div>
 
-        <Image
-          src="/assets/illustrations/fetch-study-companion.png"
-          alt="FETCH resting on books"
-          width={320}
-          height={210}
-          className="pomodoro-hero-mascot select-none pointer-events-none"
-          priority
-        />
-
-        <Button asChild variant="secondary" className="relative z-10 rounded-xl font-bold shadow-xs">
+        <Button
+          asChild
+          variant="secondary"
+          className="relative z-10 rounded-xl font-bold shadow-xs"
+        >
           <Link href="/app/music">
             <MusicNotes weight="bold" />
             Music Studio &rarr;
@@ -142,31 +153,9 @@ export default function PomodoroPage() {
       {/* Main Grid: Stage (left) + Settings (right) */}
       <div className="mt-5 grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left: Pomodoro Stage */}
-        <section className="surface-card pomodoro-stage relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-white/80 dark:bg-[var(--surface-card)] p-6 sm:p-8 text-center shadow-xs backdrop-blur-xs min-h-[500px]">
-          {/* Subtle Background Desk Artwork */}
-          <div className="pointer-events-none absolute inset-0 select-none">
-            <div className="absolute -bottom-2 -left-2 w-48 sm:w-56 opacity-20 sm:opacity-35">
-              <Image
-                src="/assets/illustrations/fetch-pomodoro-books.png"
-                alt=""
-                width={260}
-                height={290}
-                className="object-contain"
-              />
-            </div>
-            <div className="absolute -bottom-2 -right-2 w-48 sm:w-56 opacity-20 sm:opacity-35">
-              <Image
-                src="/assets/illustrations/fetch-pomodoro-desk.png"
-                alt=""
-                width={270}
-                height={215}
-                className="object-contain"
-              />
-            </div>
-          </div>
-
+        <section className="surface-card pomodoro-stage relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 sm:p-8 text-center shadow-xs backdrop-blur-xs min-h-[500px]">
           {/* Mode Pill Selector */}
-          <div className="relative z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-white/95 dark:bg-[var(--surface-card)] p-1.5 shadow-sm">
+          <div className="relative z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] p-1.5 shadow-sm">
             {(
               [
                 { mode: "Focus", label: "Focus", icon: Target },
@@ -186,7 +175,7 @@ export default function PomodoroPage() {
                     "flex items-center gap-2 rounded-full px-5 py-2 text-xs font-black transition-all cursor-pointer",
                     isActive
                       ? "bg-[#1068E9] text-white shadow-xs"
-                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-slate-50 dark:hover:bg-slate-800",
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-subtle)]",
                   )}
                 >
                   <Icon size={16} weight={isActive ? "fill" : "bold"} />
@@ -198,12 +187,15 @@ export default function PomodoroPage() {
 
           {/* Circular SVG Timer Dial */}
           <div className="relative z-10 my-6 flex items-center justify-center">
-            <svg className="size-64 sm:size-72 -rotate-90 transform" viewBox="0 0 260 260">
+            <svg
+              className="size-64 sm:size-72 -rotate-90 transform"
+              viewBox="0 0 260 260"
+            >
               <circle
                 cx="130"
                 cy="130"
                 r="110"
-                className="stroke-[#E2EEFE] dark:stroke-slate-700"
+                className="stroke-[var(--border-strong)]"
                 strokeWidth="12"
                 fill="transparent"
               />
@@ -214,7 +206,9 @@ export default function PomodoroPage() {
                 className="stroke-[#1068E9] transition-all duration-500 ease-out"
                 strokeWidth="12"
                 strokeDasharray={2 * Math.PI * 110}
-                strokeDashoffset={2 * Math.PI * 110 * (1 - progressPercent / 100)}
+                strokeDashoffset={
+                  2 * Math.PI * 110 * (1 - progressPercent / 100)
+                }
                 strokeLinecap="round"
                 fill="transparent"
               />
@@ -223,16 +217,12 @@ export default function PomodoroPage() {
             {/* Dial Inner Content */}
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
               <span className="text-xs font-extrabold uppercase tracking-wider text-[var(--text-secondary)]">
-                {timer.completed
-                  ? "Well done!"
-                  : timer.endAt
-                    ? `${timer.mode} Session`
-                    : `${timer.mode} Session`}
+                {timer.mode} session
               </span>
               <p
                 role="timer"
                 aria-label={`${timer.mode}: ${timerText(timer.remaining)} remaining`}
-                className="tabular font-display my-1 text-5xl sm:text-6xl font-black text-[#0F264A] dark:text-white tracking-tight"
+                className="tabular font-display my-1 text-5xl sm:text-6xl font-black tracking-tight"
               >
                 {timerText(timer.remaining)}
               </p>
@@ -242,11 +232,13 @@ export default function PomodoroPage() {
                 max={totalSeconds}
                 value={totalSeconds - timer.remaining}
               />
-              <span className="text-xs font-bold text-[#1068E9]">
+              <span className="pomodoro-timer-status text-xs font-bold">
                 {timer.completed
-                  ? "Session complete! 🎉"
+                  ? "Session complete"
                   : timer.endAt
-                    ? "Stay focused! 💙"
+                    ? "Session in progress"
+                    : isTimerPaused
+                      ? "Timer paused"
                     : "Ready when you are"}
               </span>
               <div role="status" aria-live="polite" className="sr-only">
@@ -265,7 +257,9 @@ export default function PomodoroPage() {
                 }
                 className="flex min-w-[140px] items-center justify-center gap-2 rounded-full bg-[#1068E9] px-7 py-3 text-sm font-black text-white shadow-md hover:bg-[#0D57C5] transition-all active:scale-95 cursor-pointer"
               >
-                <span>Prepare {timer.mode === "Focus" ? "a break" : "to focus"}</span>
+                <span>
+                  Prepare {timer.mode === "Focus" ? "a break" : "to focus"}
+                </span>
               </button>
             ) : (
               <button
@@ -282,7 +276,9 @@ export default function PomodoroPage() {
                 ) : (
                   <>
                     <Play size={18} weight="fill" className="ml-0.5" />
-                    <span>{timer.remaining === totalSeconds ? "Start" : "Resume"}</span>
+                    <span>
+                      {timer.remaining === totalSeconds ? "Start" : "Resume"}
+                    </span>
                   </>
                 )}
               </button>
@@ -292,7 +288,7 @@ export default function PomodoroPage() {
               type="button"
               disabled={!ready}
               onClick={() => resetTimer(timer.mode)}
-              className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-white dark:bg-[var(--surface-subtle)] px-5 py-3 text-xs font-bold text-[var(--text-primary)] shadow-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-3 text-xs font-bold text-[var(--text-primary)] shadow-xs hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer disabled:opacity-50"
             >
               <ArrowCounterClockwise size={16} weight="bold" />
               <span>Reset</span>
@@ -301,8 +297,10 @@ export default function PomodoroPage() {
             <button
               type="button"
               disabled={!ready}
-              onClick={() => resetTimer(timer.mode === "Focus" ? "Short break" : "Focus")}
-              className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-white dark:bg-[var(--surface-subtle)] px-5 py-3 text-xs font-bold text-[var(--text-primary)] shadow-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+              onClick={() =>
+                resetTimer(timer.mode === "Focus" ? "Short break" : "Focus")
+              }
+              className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-3 text-xs font-bold text-[var(--text-primary)] shadow-xs hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer disabled:opacity-50"
             >
               <SkipForward size={16} weight="bold" />
               <span>Skip</span>
@@ -328,8 +326,17 @@ export default function PomodoroPage() {
                   onClick={() => {
                     setTimer((t) => ({
                       ...t,
-                      durations: { Focus: 25, "Short break": 5, "Long break": 15 },
-                      remaining: t.mode === "Focus" ? 25 * 60 : t.mode === "Short break" ? 5 * 60 : 15 * 60,
+                      durations: {
+                        Focus: 25,
+                        "Short break": 5,
+                        "Long break": 15,
+                      },
+                      remaining:
+                        t.mode === "Focus"
+                          ? 25 * 60
+                          : t.mode === "Short break"
+                            ? 5 * 60
+                            : 15 * 60,
                     }));
                   }}
                   className="text-xs font-bold text-[#1068E9] hover:underline cursor-pointer"
@@ -341,12 +348,20 @@ export default function PomodoroPage() {
               <div className="mt-4 space-y-3">
                 {/* Focus duration */}
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-[var(--text-secondary)]">
+                  <label
+                    htmlFor="pomodoro-focus-duration"
+                    className="mb-1 block text-xs font-bold text-[var(--text-secondary)]"
+                  >
                     Focus duration (minutes)
                   </label>
                   <div className="relative flex items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2 focus-within:border-[#1068E9] focus-within:ring-2 focus-within:ring-[#1068E9]/15">
-                    <Timer size={18} className="mr-2 text-[var(--text-tertiary)] shrink-0" weight="bold" />
+                    <Timer
+                      size={18}
+                      className="mr-2 text-[var(--text-tertiary)] shrink-0"
+                      weight="bold"
+                    />
                     <input
+                      id="pomodoro-focus-duration"
                       type="number"
                       min={1}
                       max={120}
@@ -359,7 +374,9 @@ export default function PomodoroPage() {
                           setTimer((t) => ({
                             ...t,
                             durations: { ...t.durations, Focus: n },
-                            ...(t.mode === "Focus" ? { remaining: n * 60, completed: false } : {}),
+                            ...(t.mode === "Focus"
+                              ? { remaining: n * 60, completed: false }
+                              : {}),
                           }));
                         }
                       }}
@@ -369,12 +386,20 @@ export default function PomodoroPage() {
 
                 {/* Short break duration */}
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-[var(--text-secondary)]">
+                  <label
+                    htmlFor="pomodoro-short-duration"
+                    className="mb-1 block text-xs font-bold text-[var(--text-secondary)]"
+                  >
                     Short break (minutes)
                   </label>
                   <div className="relative flex items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2 focus-within:border-[#1068E9] focus-within:ring-2 focus-within:ring-[#1068E9]/15">
-                    <Coffee size={18} className="mr-2 text-[var(--text-tertiary)] shrink-0" weight="bold" />
+                    <Coffee
+                      size={18}
+                      className="mr-2 text-[var(--text-tertiary)] shrink-0"
+                      weight="bold"
+                    />
                     <input
+                      id="pomodoro-short-duration"
                       type="number"
                       min={1}
                       max={120}
@@ -387,7 +412,9 @@ export default function PomodoroPage() {
                           setTimer((t) => ({
                             ...t,
                             durations: { ...t.durations, "Short break": n },
-                            ...(t.mode === "Short break" ? { remaining: n * 60, completed: false } : {}),
+                            ...(t.mode === "Short break"
+                              ? { remaining: n * 60, completed: false }
+                              : {}),
                           }));
                         }
                       }}
@@ -397,12 +424,20 @@ export default function PomodoroPage() {
 
                 {/* Long break duration */}
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-[var(--text-secondary)]">
+                  <label
+                    htmlFor="pomodoro-long-duration"
+                    className="mb-1 block text-xs font-bold text-[var(--text-secondary)]"
+                  >
                     Long break (minutes)
                   </label>
                   <div className="relative flex items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2 focus-within:border-[#1068E9] focus-within:ring-2 focus-within:ring-[#1068E9]/15">
-                    <Sun size={18} className="mr-2 text-[var(--text-tertiary)] shrink-0" weight="bold" />
+                    <Sun
+                      size={18}
+                      className="mr-2 text-[var(--text-tertiary)] shrink-0"
+                      weight="bold"
+                    />
                     <input
+                      id="pomodoro-long-duration"
                       type="number"
                       min={1}
                       max={120}
@@ -415,7 +450,9 @@ export default function PomodoroPage() {
                           setTimer((t) => ({
                             ...t,
                             durations: { ...t.durations, "Long break": n },
-                            ...(t.mode === "Long break" ? { remaining: n * 60, completed: false } : {}),
+                            ...(t.mode === "Long break"
+                              ? { remaining: n * 60, completed: false }
+                              : {}),
                           }));
                         }
                       }}
@@ -425,15 +462,25 @@ export default function PomodoroPage() {
 
                 {/* StudyPack Context */}
                 <div className="pt-1">
-                  <label className="mb-1 block text-xs font-bold text-[var(--text-secondary)]">
+                  <label
+                    htmlFor="pomodoro-pack"
+                    className="mb-1 block text-xs font-bold text-[var(--text-secondary)]"
+                  >
                     StudyPack context
                   </label>
                   <div className="relative flex items-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2 focus-within:border-[#1068E9] focus-within:ring-2 focus-within:ring-[#1068E9]/15">
-                    <Stack size={18} className="mr-2 text-[var(--text-tertiary)] shrink-0" weight="bold" />
+                    <Stack
+                      size={18}
+                      className="mr-2 text-[var(--text-tertiary)] shrink-0"
+                      weight="bold"
+                    />
                     <select
+                      id="pomodoro-pack"
                       className="w-full bg-transparent text-xs font-bold text-[var(--text-primary)] outline-none cursor-pointer"
                       value={timer.packId}
-                      onChange={(e) => setTimer((t) => ({ ...t, packId: e.target.value }))}
+                      onChange={(e) =>
+                        setTimer((t) => ({ ...t, packId: e.target.value }))
+                      }
                     >
                       <option value="">Independent focus session</option>
                       {packs.map((p) => (
@@ -462,7 +509,11 @@ export default function PomodoroPage() {
                     type="button"
                     role="switch"
                     aria-checked={notificationsEnabled}
-                    disabled={notifPermission === "unsupported" || notifPermission === "denied"}
+                    aria-label="Browser notifications"
+                    disabled={
+                      notifPermission === "unsupported" ||
+                      notifPermission === "denied"
+                    }
                     onClick={async () => {
                       if (!notificationsEnabled) {
                         const granted = await requestNotifications();
@@ -483,7 +534,9 @@ export default function PomodoroPage() {
                       aria-hidden="true"
                       className={cn(
                         "pointer-events-none inline-block size-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out",
-                        notificationsEnabled ? "translate-x-5" : "translate-x-0",
+                        notificationsEnabled
+                          ? "translate-x-5"
+                          : "translate-x-0",
                       )}
                     />
                   </button>
@@ -514,6 +567,7 @@ export default function PomodoroPage() {
                     type="button"
                     role="switch"
                     aria-checked={soundEnabled}
+                    aria-label="Sound alerts"
                     onClick={() => setSoundEnabled(!soundEnabled)}
                     className={cn(
                       "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#1068E9]",
@@ -546,14 +600,18 @@ export default function PomodoroPage() {
             <CaretRight size={16} className="text-[var(--text-tertiary)]" />
           </div>
           <div className="mt-3">
-            <span className="text-xs font-bold text-[var(--text-secondary)]">Today&apos;s Focus Goal</span>
+            <span className="text-xs font-bold text-[var(--text-secondary)]">
+              Today&apos;s Focus Goal
+            </span>
             <h3 className="font-display text-xl font-extrabold text-[var(--text-primary)]">
               {completedTodayCount} / {goalSessions} sessions
             </h3>
             <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
               <div
                 className="h-full rounded-full bg-[#1068E9] transition-all duration-300"
-                style={{ width: `${Math.min(100, (completedTodayCount / goalSessions) * 100)}%` }}
+                style={{
+                  width: `${Math.min(100, (completedTodayCount / goalSessions) * 100)}%`,
+                }}
               />
             </div>
           </div>
@@ -565,14 +623,17 @@ export default function PomodoroPage() {
             <span className="flex size-10 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
               <Flame size={22} weight="fill" />
             </span>
-            <span className="text-xs font-bold text-amber-500">✨</span>
           </div>
           <div className="mt-3">
-            <span className="text-xs font-bold text-[var(--text-secondary)]">Current Streak</span>
+            <span className="text-xs font-bold text-[var(--text-secondary)]">
+              Current Streak
+            </span>
             <h3 className="font-display text-xl font-extrabold text-[var(--text-primary)]">
               {streakDays} {streakDays === 1 ? "day" : "days"}
             </h3>
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">Keep it up!</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              Keep it up!
+            </p>
           </div>
         </div>
 
@@ -585,18 +646,23 @@ export default function PomodoroPage() {
             <CaretRight size={16} className="text-[var(--text-tertiary)]" />
           </div>
           <div className="mt-3">
-            <span className="text-xs font-bold text-[var(--text-secondary)]">Completed Today</span>
+            <span className="text-xs font-bold text-[var(--text-secondary)]">
+              Completed Today
+            </span>
             <h3 className="font-display text-xl font-extrabold text-[var(--text-primary)]">
-              {completedTodayCount} {completedTodayCount === 1 ? "session" : "sessions"}
+              {completedTodayCount}{" "}
+              {completedTodayCount === 1 ? "session" : "sessions"}
             </h3>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              {completedTodayCount > 0 ? `${completedMinutesText} of focused work!` : "Start your first session today!"}
+              {completedTodayCount > 0
+                ? `${completedMinutesText} of focused work!`
+                : "Start your first session today!"}
             </p>
           </div>
         </div>
 
         {/* Card 4: Study Tip */}
-        <div className="surface-card relative flex flex-col justify-between overflow-hidden rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs">
+        <div className="surface-card pomodoro-study-tip relative flex flex-col justify-between rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-black text-amber-600">
               <Lightbulb size={18} weight="fill" />
@@ -611,18 +677,18 @@ export default function PomodoroPage() {
               <ArrowsClockwise size={16} weight="bold" />
             </button>
           </div>
-          <div className="mt-3 pr-12">
+          <div className="pomodoro-study-tip-body">
             <p className="text-xs font-semibold leading-relaxed text-[var(--text-primary)]">
               {STUDY_TIPS[tipIndex]}
             </p>
+            <Image
+              src="/assets/mascot/fetch-seated.png"
+              alt=""
+              width={88}
+              height={88}
+              className="pomodoro-tip-mascot pointer-events-none select-none"
+            />
           </div>
-          <Image
-            src="/assets/illustrations/fetch-tip-peek.png"
-            alt=""
-            width={70}
-            height={50}
-            className="pointer-events-none absolute -bottom-1 -right-1 select-none"
-          />
         </div>
       </div>
     </div>

@@ -37,7 +37,7 @@ export function CreatePackPanel() {
     { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
     {
       id: "pdf",
-      label: "PDF",
+      label: "Upload file",
       status: mode === "account" ? "Available" : "Sign in",
       icon: FilePdf,
     },
@@ -56,10 +56,17 @@ export function CreatePackPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
-  const [outputKind, setOutputKind] = useState<"quiz" | "flashcards" | "summary">("quiz");
+  const [outputKind, setOutputKind] = useState<
+    "quiz" | "flashcards" | "summary"
+  >("quiz");
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
-  const [requestState, setRequestState] = useState<RequestState>(createInitialRequestState);
-  const [aiUsage, setAiUsage] = useState<{ remaining: number; allowance: number } | null>(null);
+  const [requestState, setRequestState] = useState<RequestState>(
+    createInitialRequestState,
+  );
+  const [aiUsage, setAiUsage] = useState<{
+    remaining: number;
+    allowance: number;
+  } | null>(null);
   const [jobProgress, setJobProgress] = useState<{
     jobId: string;
     stage: string;
@@ -125,8 +132,12 @@ export function CreatePackPanel() {
     if (!jobProgress?.jobId) return;
     setCancelling(true);
     try {
-      await fetch(`/api/generate/job/${jobProgress.jobId}/cancel`, { method: "POST" });
-      setJobProgress((prev) => (prev ? { ...prev, cancelRequested: true } : null));
+      await fetch(`/api/generate/job/${jobProgress.jobId}/cancel`, {
+        method: "POST",
+      });
+      setJobProgress((prev) =>
+        prev ? { ...prev, cancelRequested: true } : null,
+      );
     } catch {
       // Ignored
     } finally {
@@ -152,7 +163,10 @@ export function CreatePackPanel() {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && typeof data.remaining === "number") {
-            setAiUsage({ remaining: data.remaining, allowance: data.allowance });
+            setAiUsage({
+              remaining: data.remaining,
+              allowance: data.allowance,
+            });
           }
         })
         .catch(() => {});
@@ -166,7 +180,8 @@ export function CreatePackPanel() {
     title.trim().length < 2 ||
     (tab === "paste" && source.trim().length < 80) ||
     (tab === "pdf" && (!pdfDoc || mode !== "account")) ||
-    (tab === "scan" && (!scanDocId || scanText.trim().length < 80 || mode !== "account")) ||
+    (tab === "scan" &&
+      (!scanDocId || scanText.trim().length < 80 || mode !== "account")) ||
     tab === "url";
 
   async function handlePdfUpload(file: File) {
@@ -174,7 +189,9 @@ export function CreatePackPanel() {
     setError("");
     setWarning("");
     if (mode !== "account") {
-      setError("Sign in with an account to upload PDFs and generate StudyPacks.");
+      setError(
+        "Sign in with an account to upload PDFs and generate StudyPacks.",
+      );
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -201,7 +218,9 @@ export function CreatePackPanel() {
         textPreview: data.textPreview,
       });
       if (title === "My study pack" || !title.trim()) {
-        const cleanName = data.fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ");
+        const cleanName = data.fileName
+          .replace(/\.pdf$/i, "")
+          .replace(/[_-]+/g, " ");
         setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
       }
     } catch (err) {
@@ -222,7 +241,9 @@ export function CreatePackPanel() {
         return;
       }
       if (tab === "scan" && (!scanDocId || scanText.trim().length < 80)) {
-        setError("Please extract and review at least 80 characters of notes from your scans.");
+        setError(
+          "Please extract and review at least 80 characters of notes from your scans.",
+        );
         return;
       }
       setLoading(true);
@@ -234,14 +255,14 @@ export function CreatePackPanel() {
           tab === "pdf"
             ? pdfDoc!.textPreview
             : tab === "scan"
-            ? scanText.trim()
-            : source.trim();
+              ? scanText.trim()
+              : source.trim();
         const sourceLabel =
           tab === "pdf"
             ? `PDF: ${pdfDoc!.fileName}`
             : tab === "scan"
-            ? "Scanned Notes"
-            : "Pasted Notes";
+              ? "Scanned Notes"
+              : "Pasted Notes";
         const sourceType =
           tab === "pdf" ? "pdf" : tab === "scan" ? "scan" : "text";
 
@@ -260,7 +281,9 @@ export function CreatePackPanel() {
 
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.message || data.error || "Failed to start generation job");
+          throw new Error(
+            data.message || data.error || "Failed to start generation job",
+          );
         }
 
         setJobProgress({
@@ -273,7 +296,9 @@ export function CreatePackPanel() {
         });
       } catch (err) {
         setLoading(false);
-        setError(err instanceof Error ? err.message : "Failed to start generation");
+        setError(
+          err instanceof Error ? err.message : "Failed to start generation",
+        );
       }
       return;
     }
@@ -292,7 +317,10 @@ export function CreatePackPanel() {
           title,
           count,
         });
-        const { requestId: reqId, nextState } = resolveRequestId(requestState, fingerprint);
+        const { requestId: reqId, nextState } = resolveRequestId(
+          requestState,
+          fingerprint,
+        );
         setRequestState(nextState);
 
         const response = await fetch("/api/pdf/generate", {
@@ -314,7 +342,11 @@ export function CreatePackPanel() {
           warning?: string;
         };
         if (!response.ok || !data.questions) {
-          throw new Error(data.message || data.error || "FETCH could not create this StudyPack from PDF.");
+          throw new Error(
+            data.message ||
+              data.error ||
+              "FETCH could not create this StudyPack from PDF.",
+          );
         }
 
         if (data.warning) {
@@ -338,7 +370,7 @@ export function CreatePackPanel() {
         setError(
           reason instanceof Error
             ? reason.message
-            : "FETCH could not create this StudyPack from PDF."
+            : "FETCH could not create this StudyPack from PDF.",
         );
       } finally {
         setLoading(false);
@@ -347,7 +379,9 @@ export function CreatePackPanel() {
     }
 
     if (tab !== "paste") {
-      setError("URL extraction is in development. Paste text or upload a PDF to generate.");
+      setError(
+        "URL extraction is in development. Paste text or upload a PDF to generate.",
+      );
       return;
     }
 
@@ -359,7 +393,10 @@ export function CreatePackPanel() {
         source,
         count,
       });
-      const { requestId: reqId, nextState } = resolveRequestId(requestState, fingerprint);
+      const { requestId: reqId, nextState } = resolveRequestId(
+        requestState,
+        fingerprint,
+      );
       setRequestState(nextState);
 
       const response = await fetch("/api/generate", {
@@ -381,7 +418,11 @@ export function CreatePackPanel() {
         warning?: string;
       };
       if (!response.ok || !data.questions) {
-        throw new Error(data.message || data.error || "FETCH could not create this StudyPack.");
+        throw new Error(
+          data.message ||
+            data.error ||
+            "FETCH could not create this StudyPack.",
+        );
       }
 
       if (data.warning) {
@@ -389,7 +430,10 @@ export function CreatePackPanel() {
       }
 
       const id = data.packId || crypto.randomUUID();
-      if (!id) throw new Error("FETCH could not confirm that this StudyPack was saved.");
+      if (!id)
+        throw new Error(
+          "FETCH could not confirm that this StudyPack was saved.",
+        );
 
       // Success: generate fresh requestId for the next session
       setRequestState(rotateRequestState());
@@ -408,7 +452,7 @@ export function CreatePackPanel() {
       setError(
         reason instanceof Error
           ? reason.message
-          : "FETCH could not create this StudyPack."
+          : "FETCH could not create this StudyPack.",
       );
     } finally {
       setLoading(false);
@@ -438,8 +482,11 @@ export function CreatePackPanel() {
   };
 
   return (
-    <section id="add-material" className="surface-card overflow-hidden rounded-3xl border border-[var(--border-subtle)] shadow-xs">
-      <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+    <section
+      id="add-material"
+      className="surface-card overflow-hidden rounded-3xl border border-[var(--border-subtle)] shadow-xs"
+    >
+      <div className="pack-creator-heading flex flex-col gap-3 border-b border-[var(--border-subtle)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div className="flex items-center gap-3">
           <Image
             src="/assets/icons/nav/studypacks.png"
@@ -453,23 +500,28 @@ export function CreatePackPanel() {
               Create a StudyPack
             </h2>
             <p className="mt-0.5 text-xs sm:text-sm text-[var(--text-secondary)]">
-              Add your material, choose a format, and let FETCH turn it into focused practice.
+              Add your material, choose a format, and let FETCH turn it into
+              focused practice.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {mode === "account" && aiUsage && (
             <span className="text-xs font-bold text-[var(--fetch-blue-700)] bg-[var(--fetch-blue-50)] px-3 py-1 rounded-full border border-[var(--fetch-blue-200)]">
-              {aiUsage.remaining} of {aiUsage.allowance} AI packs left this month
+              {aiUsage.remaining} of {aiUsage.allowance} AI packs left this
+              month
             </span>
           )}
-          <Badge tone={mode === "account" ? "success" : "neutral"} className="rounded-full px-3 py-1 font-bold">
+          <Badge
+            tone={mode === "account" ? "success" : "neutral"}
+            className="rounded-full px-3 py-1 font-bold"
+          >
             {mode === "account" ? "✓ Connected account" : "Browser demo"}
           </Badge>
         </div>
       </div>
 
-      <div className="p-5 sm:p-6">
+      <div className="pack-creator-body p-5 sm:p-6">
         <div
           role="tablist"
           aria-label="Material type"
@@ -496,7 +548,11 @@ export function CreatePackPanel() {
                   : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:bg-[var(--surface-card)]",
               )}
             >
-              <Icon size={19} weight={tab === id ? "bold" : "regular"} aria-hidden="true" />
+              <Icon
+                size={19}
+                weight={tab === id ? "bold" : "regular"}
+                aria-hidden="true"
+              />
               <span>{label}</span>
               {status !== "Available" && (
                 <span className="text-[10px] font-bold text-[var(--text-tertiary)] bg-[var(--border-subtle)] px-1.5 py-0.5 rounded-sm">
@@ -516,232 +572,250 @@ export function CreatePackPanel() {
         >
           {tab === "url" && (
             <p className="notice mt-4" role="status">
-              Link import is coming soon. Paste your material as text or upload a PDF to create a pack today.
+              Link import is coming soon. Paste your material as text or upload
+              a PDF to create a pack today.
             </p>
           )}
 
-        <div className="mt-5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="pack-title-input" className="block font-extrabold">
-              StudyPack name
-            </label>
-            {preferences?.primarySubject && (
-              <span className="text-xs font-semibold text-[var(--fetch-blue-700)]">
-                Focus: {preferences.primarySubject}
-              </span>
+          <div className="pack-name-field mt-5">
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="pack-title-input"
+                className="block font-extrabold"
+              >
+                StudyPack name
+              </label>
+              {preferences?.primarySubject && (
+                <span className="text-xs font-semibold text-[var(--fetch-blue-700)]">
+                  Focus: {preferences.primarySubject}
+                </span>
+              )}
+            </div>
+            <input
+              id="pack-title-input"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={80}
+              className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4"
+            />
+            {preferences?.primarySubject && title === "My study pack" && (
+              <button
+                type="button"
+                onClick={() => setTitle(`${preferences.primarySubject} Notes`)}
+                className="mt-1.5 block text-xs font-bold text-[var(--fetch-blue-700)] underline cursor-pointer"
+              >
+                Use suggestion: {preferences.primarySubject} Notes
+              </button>
             )}
           </div>
-          <input
-            id="pack-title-input"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            maxLength={80}
-            className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4"
-          />
-          {preferences?.primarySubject && title === "My study pack" && (
-            <button
-              type="button"
-              onClick={() => setTitle(`${preferences.primarySubject} Notes`)}
-              className="mt-1.5 block text-xs font-bold text-[var(--fetch-blue-700)] underline cursor-pointer"
-            >
-              Use suggestion: {preferences.primarySubject} Notes
-            </button>
+
+          {tab === "paste" && (
+            <>
+              <label className="pack-source-field mt-5 block font-extrabold">
+                <span className="pack-source-label">
+                  Paste your study material
+                </span>
+                <textarea
+                  value={source}
+                  onChange={(event) => setSource(event.target.value)}
+                  maxLength={20_000}
+                  rows={6}
+                  aria-describedby="source-requirement"
+                  placeholder="Paste at least 80 characters from your notes or module..."
+                  className="mt-2 w-full resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-4 placeholder:text-[var(--text-tertiary)]"
+                />
+                <div
+                  id="source-requirement"
+                  className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className={
+                      charactersNeeded > 0
+                        ? "font-medium text-[var(--text-secondary)]"
+                        : "font-bold text-[var(--success)]"
+                    }
+                  >
+                    {charactersNeeded > 0
+                      ? `${charactersNeeded} more character${charactersNeeded === 1 ? "" : "s"} needed to generate (minimum 80)`
+                      : `Ready to generate (${source.trim().length.toLocaleString()} characters)`}
+                  </span>
+                  <span className="font-bold text-[var(--text-tertiary)]">
+                    {source.length.toLocaleString()} / 20,000 characters
+                  </span>
+                </div>
+              </label>
+
+              {/* Quick Example Starter Pills from visual reference */}
+              <div className="pack-examples mt-3.5 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-[var(--text-secondary)]">
+                  Or try a quick example:
+                </span>
+                {[
+                  {
+                    label: "🧬 Biology: Cell structure",
+                    title: "Biology: Cell Structure",
+                    text: "Cells are the basic structural and functional units of all living organisms. The cell membrane is a phospholipid bilayer that regulates transport into and out of the cell. Mitochondria generate ATP through cellular respiration. Ribosomes assemble proteins from mRNA sequences. Plant cells contain chloroplasts for photosynthesis and a rigid cellulose cell wall.",
+                  },
+                  {
+                    label: "📐 Math: Quadratic functions",
+                    title: "Math: Quadratic Functions",
+                    text: "A quadratic function is a second-degree polynomial of the form f(x) = ax² + bx + c. The graph of a quadratic function is a parabola with a vertex at (-b/2a, f(-b/2a)). The discriminant Δ = b² - 4ac determines the nature of the roots: two real roots if Δ > 0, one repeated root if Δ = 0, and complex conjugate roots if Δ < 0.",
+                  },
+                  {
+                    label: "🏛️ History: World War II",
+                    title: "History: World War II",
+                    text: "World War II was a global conflict lasting from 1939 to 1945 between the Allies and Axis powers. Key turning points included the Battle of Stalingrad in 1943, the Allied invasion of Normandy on D-Day in June 1944, and the Pacific naval engagements at Midway. The war ended following unconditional surrenders in 1945.",
+                  },
+                  {
+                    label: "🧠 Psychology: Memory",
+                    title: "Psychology: Memory",
+                    text: "Human memory is categorized into sensory memory, working or short-term memory, and long-term memory. Working memory holds information temporarily with a limited capacity of roughly 7 plus or minus 2 items. Long-term memory divides into explicit declarative memory (semantic and episodic) and implicit procedural memory.",
+                  },
+                ].map((example) => (
+                  <button
+                    key={example.label}
+                    type="button"
+                    onClick={() => {
+                      setTitle(example.title);
+                      setSource(example.text);
+                      setError("");
+                    }}
+                    className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--text-secondary)] hover:border-[var(--fetch-blue-400)] hover:bg-[var(--surface-card)] hover:text-[var(--fetch-blue-700)] transition-all cursor-pointer"
+                  >
+                    {example.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {tab === "pdf" && (
+            <div className="mt-5">
+              {mode !== "account" ? (
+                <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
+                  <FilePdf size={38} className="text-[var(--text-tertiary)]" />
+                  <span className="mt-3 font-extrabold text-[var(--text-primary)]">
+                    Account required for PDF import
+                  </span>
+                  <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
+                    Sign in with an account to securely upload PDFs to your
+                    private library and generate custom StudyPacks.
+                  </span>
+                </div>
+              ) : pdfDoc ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-800">
+                        <FilePdf size={28} />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-emerald-950">
+                          {pdfDoc.fileName}
+                        </h4>
+                        <p className="text-xs text-emerald-800">
+                          {pdfDoc.pageCount} pages ·{" "}
+                          {pdfDoc.characterCount.toLocaleString()} characters
+                          extracted
+                        </p>
+                      </div>
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50">
+                      Replace PDF
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handlePdfUpload(f);
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {pdfDoc.textPreview && (
+                    <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-[var(--text-secondary)] italic border border-emerald-100">
+                      &ldquo;{pdfDoc.textPreview}&rdquo;
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-6 text-center text-[var(--fetch-blue-900)] hover:bg-[var(--fetch-blue-100)]/50 transition-colors">
+                  <UploadSimple size={34} />
+                  <span className="mt-3 font-extrabold">
+                    {uploadingPdf
+                      ? "Extracting PDF text..."
+                      : "Choose or drag a PDF document"}
+                  </span>
+                  <span className="mt-1 text-sm text-[var(--fetch-blue-800)]">
+                    Up to 10 MiB, maximum 25 pages. Extracted privately into
+                    your account.
+                  </span>
+                  <input
+                    disabled={uploadingPdf}
+                    type="file"
+                    accept="application/pdf"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const f = event.target.files?.[0];
+                      if (f) handlePdfUpload(f);
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          )}
+
+          {tab === "scan" && (
+            <div className="mt-5">
+              {mode !== "account" ? (
+                <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
+                  <Camera size={38} className="text-[var(--text-tertiary)]" />
+                  <span className="mt-3 font-extrabold text-[var(--text-primary)]">
+                    Account required for scanned notes
+                  </span>
+                  <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
+                    Sign in with an account to upload or photograph your study
+                    notes and transcribe them with AI.
+                  </span>
+                </div>
+              ) : (
+                <PaperScanIntake
+                  onExtractionReady={(docId, text) => {
+                    setScanDocId(docId || null);
+                    setScanText(text);
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {tab === "url" && (
+            <label className="mt-5 block font-extrabold">
+              Article or supported video URL
+              <input
+                disabled
+                type="url"
+                placeholder="https://"
+                className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 placeholder:text-[var(--text-tertiary)]"
+              />
+              <span className="mt-1 block text-xs text-[var(--text-secondary)]">
+                Web URL extraction is in active development.
+              </span>
+            </label>
           )}
         </div>
 
-        {tab === "paste" && (
-          <>
-            <label className="mt-5 block font-extrabold">
-            Paste your study material
-            <textarea
-              value={source}
-              onChange={(event) => setSource(event.target.value)}
-              maxLength={20_000}
-              rows={6}
-              aria-describedby="source-requirement"
-              placeholder="Paste at least 80 characters from your notes or module..."
-              className="mt-2 w-full resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-4 placeholder:text-[var(--text-tertiary)]"
-            />
-            <div
-              id="source-requirement"
-              className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs"
-            >
-              <span
-                role="status"
-                aria-live="polite"
-                className={
-                  charactersNeeded > 0
-                    ? "font-medium text-[var(--text-secondary)]"
-                    : "font-bold text-[var(--success)]"
-                }
-              >
-                {charactersNeeded > 0
-                  ? `${charactersNeeded} more character${charactersNeeded === 1 ? "" : "s"} needed to generate (minimum 80)`
-                  : `Ready to generate (${source.trim().length.toLocaleString()} characters)`}
-              </span>
-              <span className="font-bold text-[var(--text-tertiary)]">
-                {source.length.toLocaleString()} / 20,000 characters
-              </span>
-            </div>
-          </label>
-
-          {/* Quick Example Starter Pills from visual reference */}
-          <div className="mt-3.5 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-[var(--text-secondary)]">Or try a quick example:</span>
-            {[
-              {
-                label: "🧬 Biology: Cell structure",
-                title: "Biology: Cell Structure",
-                text: "Cells are the basic structural and functional units of all living organisms. The cell membrane is a phospholipid bilayer that regulates transport into and out of the cell. Mitochondria generate ATP through cellular respiration. Ribosomes assemble proteins from mRNA sequences. Plant cells contain chloroplasts for photosynthesis and a rigid cellulose cell wall.",
-              },
-              {
-                label: "📐 Math: Quadratic functions",
-                title: "Math: Quadratic Functions",
-                text: "A quadratic function is a second-degree polynomial of the form f(x) = ax² + bx + c. The graph of a quadratic function is a parabola with a vertex at (-b/2a, f(-b/2a)). The discriminant Δ = b² - 4ac determines the nature of the roots: two real roots if Δ > 0, one repeated root if Δ = 0, and complex conjugate roots if Δ < 0.",
-              },
-              {
-                label: "🏛️ History: World War II",
-                title: "History: World War II",
-                text: "World War II was a global conflict lasting from 1939 to 1945 between the Allies and Axis powers. Key turning points included the Battle of Stalingrad in 1943, the Allied invasion of Normandy on D-Day in June 1944, and the Pacific naval engagements at Midway. The war ended following unconditional surrenders in 1945.",
-              },
-              {
-                label: "🧠 Psychology: Memory",
-                title: "Psychology: Memory",
-                text: "Human memory is categorized into sensory memory, working or short-term memory, and long-term memory. Working memory holds information temporarily with a limited capacity of roughly 7 plus or minus 2 items. Long-term memory divides into explicit declarative memory (semantic and episodic) and implicit procedural memory.",
-              },
-            ].map((example) => (
-              <button
-                key={example.label}
-                type="button"
-                onClick={() => {
-                  setTitle(example.title);
-                  setSource(example.text);
-                  setError("");
-                }}
-                className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-2.5 py-1 text-xs font-semibold text-[var(--text-secondary)] hover:border-[var(--fetch-blue-400)] hover:bg-[var(--surface-card)] hover:text-[var(--fetch-blue-700)] transition-all cursor-pointer"
-              >
-                {example.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-        {tab === "pdf" && (
-          <div className="mt-5">
-            {mode !== "account" ? (
-              <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
-                <FilePdf size={38} className="text-[var(--text-tertiary)]" />
-                <span className="mt-3 font-extrabold text-[var(--text-primary)]">
-                  Account required for PDF import
-                </span>
-                <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
-                  Sign in with an account to securely upload PDFs to your private library and generate custom StudyPacks.
-                </span>
-              </div>
-            ) : pdfDoc ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-emerald-100 p-2.5 text-emerald-800">
-                      <FilePdf size={28} />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-emerald-950">{pdfDoc.fileName}</h4>
-                      <p className="text-xs text-emerald-800">
-                        {pdfDoc.pageCount} pages · {pdfDoc.characterCount.toLocaleString()} characters extracted
-                      </p>
-                    </div>
-                  </div>
-                  <label className="cursor-pointer inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50">
-                    Replace PDF
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handlePdfUpload(f);
-                      }}
-                    />
-                  </label>
-                </div>
-                {pdfDoc.textPreview && (
-                  <div className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-[var(--text-secondary)] italic border border-emerald-100">
-                    &ldquo;{pdfDoc.textPreview}&rdquo;
-                  </div>
-                )}
-              </div>
-            ) : (
-              <label className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-6 text-center text-[var(--fetch-blue-900)] hover:bg-[var(--fetch-blue-100)]/50 transition-colors">
-                <UploadSimple size={34} />
-                <span className="mt-3 font-extrabold">
-                  {uploadingPdf ? "Extracting PDF text..." : "Choose or drag a PDF document"}
-                </span>
-                <span className="mt-1 text-sm text-[var(--fetch-blue-800)]">
-                  Up to 10 MiB, maximum 25 pages. Extracted privately into your account.
-                </span>
-                <input
-                  disabled={uploadingPdf}
-                  type="file"
-                  accept="application/pdf"
-                  className="sr-only"
-                  onChange={(event) => {
-                    const f = event.target.files?.[0];
-                    if (f) handlePdfUpload(f);
-                  }}
-                />
-              </label>
-            )}
-          </div>
-        )}
-
-        {tab === "scan" && (
-          <div className="mt-5">
-            {mode !== "account" ? (
-              <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 text-center">
-                <Camera size={38} className="text-[var(--text-tertiary)]" />
-                <span className="mt-3 font-extrabold text-[var(--text-primary)]">
-                  Account required for scanned notes
-                </span>
-                <span className="mt-1 max-w-md text-sm text-[var(--text-secondary)]">
-                  Sign in with an account to upload or photograph your study notes and transcribe them with AI.
-                </span>
-              </div>
-            ) : (
-              <PaperScanIntake
-                onExtractionReady={(docId, text) => {
-                  setScanDocId(docId || null);
-                  setScanText(text);
-                }}
-              />
-            )}
-          </div>
-        )}
-
-        {tab === "url" && (
-          <label className="mt-5 block font-extrabold">
-            Article or supported video URL
-            <input
-              disabled
-              type="url"
-              placeholder="https://"
-              className="mt-2 min-h-12 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 placeholder:text-[var(--text-tertiary)]"
-            />
-            <span className="mt-1 block text-xs text-[var(--text-secondary)]">
-              Web URL extraction is in active development.
-            </span>
-          </label>
-        )}
-        </div>
-
         {/* Output Artifact Selection */}
-        <div className="mt-6 border-t border-[var(--border-subtle)] pt-5">
+        <div className="pack-output-options mt-6 border-t border-[var(--border-subtle)] pt-5">
           <label className="block font-extrabold text-sm sm:text-base text-[var(--text-primary)]">
-            Choose Output Artifact
+            Study format
           </label>
           <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-            Select the primary study output to generate from your source material.
+            Select the primary study output to generate from your source
+            material.
           </p>
 
           <div
@@ -780,6 +854,7 @@ export function CreatePackPanel() {
                 type="button"
                 role="radio"
                 aria-checked={outputKind === id}
+                title={desc}
                 onClick={() => {
                   setOutputKind(id);
                   setWarning("");
@@ -788,12 +863,19 @@ export function CreatePackPanel() {
                   "flex flex-col text-left p-3.5 rounded-xl border transition-all cursor-pointer",
                   outputKind === id
                     ? "border-[var(--fetch-blue-600)] bg-[var(--fetch-blue-50)] shadow-sm"
-                    : "border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-[var(--border-strong)]"
+                    : "border-[var(--border-subtle)] bg-[var(--surface-card)] hover:border-[var(--border-strong)]",
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 font-bold text-sm">
-                    <Icon size={16} className={outputKind === id ? "text-[var(--fetch-blue-700)]" : "text-[var(--text-tertiary)]"} />
+                    <Icon
+                      size={16}
+                      className={
+                        outputKind === id
+                          ? "text-[var(--fetch-blue-700)]"
+                          : "text-[var(--text-tertiary)]"
+                      }
+                    />
                     <span>{label}</span>
                   </div>
                   <span
@@ -801,7 +883,7 @@ export function CreatePackPanel() {
                       "text-[10px] font-bold px-1.5 py-0.5 rounded",
                       active
                         ? "bg-emerald-100 text-emerald-800"
-                        : "bg-[var(--surface-subtle)] text-[var(--text-tertiary)]"
+                        : "bg-[var(--surface-subtle)] text-[var(--text-tertiary)]",
                     )}
                   >
                     {badge}
@@ -816,7 +898,7 @@ export function CreatePackPanel() {
         </div>
 
         {outputKind === "quiz" && (
-          <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div className="pack-generate-actions mt-5 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
             <label className="block font-extrabold">
               Questions to generate
               <input
@@ -853,7 +935,7 @@ export function CreatePackPanel() {
         )}
 
         {outputKind === "flashcards" && (
-          <div className="mt-5 space-y-4">
+          <div className="pack-generate-actions pack-generate-flashcards mt-5 space-y-4">
             <div className="grid gap-5 sm:grid-cols-[1fr_auto] sm:items-end">
               <label className="block font-extrabold">
                 Flashcards to generate
@@ -900,7 +982,7 @@ export function CreatePackPanel() {
         )}
 
         {outputKind === "summary" && (
-          <div className="mt-5 flex justify-end">
+          <div className="pack-generate-actions mt-5 flex justify-end">
             <Button
               onClick={generate}
               disabled={isGenerateDisabled}

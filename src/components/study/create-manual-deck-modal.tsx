@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useRouter } from "next/navigation";
-import { Plus, Trash, X, NotePencil } from "@phosphor-icons/react";
+import {
+  Plus,
+  Trash,
+  X,
+  NotePencil,
+  Stack,
+  Lightbulb,
+  FloppyDisk,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 
 interface CardEntry {
@@ -19,7 +28,7 @@ export function CreateManualDeckModal({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const [title, setTitle] = useState("Custom Vocabulary");
   const [cards, setCards] = useState<CardEntry[]>([
     { front: "", back: "", aliases: "" },
@@ -27,19 +36,6 @@ export function CreateManualDeckModal({
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
 
   function handleAddCard() {
     setCards([...cards, { front: "", back: "", aliases: "" }]);
@@ -50,7 +46,11 @@ export function CreateManualDeckModal({
     setCards(cards.filter((_, idx) => idx !== index));
   }
 
-  function handleCardChange(index: number, field: keyof CardEntry, value: string) {
+  function handleCardChange(
+    index: number,
+    field: keyof CardEntry,
+    value: string,
+  ) {
     const updated = [...cards];
     updated[index][field] = value;
     setCards(updated);
@@ -109,128 +109,196 @@ export function CreateManualDeckModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-deck-title"
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-[var(--surface-card)] p-6 shadow-2xl border border-[var(--border-subtle)]"
-      >
-        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
-          <div className="flex items-center gap-2">
-            <NotePencil size={22} className="text-[var(--fetch-blue-600)]" />
-            <h2 id="create-deck-title" className="font-display text-xl font-bold">Create Manual Flashcard Deck</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] cursor-pointer"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <form onSubmit={handleCreateDeck} className="mt-5 space-y-4">
-          <div>
-            <label htmlFor="deck-title-input" className="block text-xs font-bold text-[var(--text-secondary)]">Deck Title</label>
-            <input
-              id="deck-title-input"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Spanish Vocabulary, Med Terminology..."
-              className="mt-1 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--surface-subtle)] px-4 py-2.5 text-sm focus:border-[var(--fetch-blue-600)] focus:outline-none"
-              required
-            />
-          </div>
-
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-[var(--text-secondary)]">
-              Cards ({cards.length})
-            </label>
-            {cards.map((card, idx) => (
-              <div
-                key={idx}
-                className="relative rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-4"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-display text-xs font-bold text-[var(--fetch-blue-700)]">
-                    Card {idx + 1}
+    <Dialog.Root
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open && !loading) onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay className="manual-deck-overlay" />
+        <Dialog.Content
+          className="manual-deck-dialog"
+          onInteractOutside={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            openerRef.current =
+              document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
+            document.getElementById("deck-title-input")?.focus();
+          }}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            openerRef.current?.focus();
+          }}
+        >
+          <header className="manual-deck-header">
+            <span className="manual-deck-header-icon">
+              <NotePencil size={28} weight="bold" />
+            </span>
+            <div>
+              <Dialog.Title className="font-display">
+                Create Manual Flashcard Deck
+              </Dialog.Title>
+              <Dialog.Description>
+                Add your own flashcards to create a custom study deck. Perfect
+                for vocabulary, concepts, or anything you want to remember.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close
+              aria-label="Close dialog"
+              disabled={loading}
+              className="manual-deck-close"
+            >
+              <X size={20} />
+            </Dialog.Close>
+          </header>
+          <form onSubmit={handleCreateDeck} aria-busy={loading}>
+            <fieldset disabled={loading} className="manual-deck-fields">
+              <div className="manual-deck-title-field">
+                <label htmlFor="deck-title-input">
+                  Deck title <span>*</span>
+                </label>
+                <input
+                  id="deck-title-input"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  maxLength={100}
+                  placeholder="e.g. Spanish Vocabulary"
+                  required
+                  aria-describedby="deck-title-helper"
+                />
+                <div id="deck-title-helper" className="manual-deck-helper">
+                  <span>
+                    Give your deck a clear, descriptive name to keep your study
+                    materials organized.
                   </span>
-                  {cards.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveCard(idx)}
-                      className="text-red-500 hover:text-red-700 cursor-pointer"
-                      title="Remove card"
-                    >
-                      <Trash size={16} />
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <input
-                      type="text"
-                      value={card.front}
-                      onChange={(e) => handleCardChange(idx, "front", e.target.value)}
-                      placeholder="Front (Prompt / Term)"
-                      className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs focus:border-[var(--fetch-blue-600)] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="text"
-                      value={card.back}
-                      onChange={(e) => handleCardChange(idx, "back", e.target.value)}
-                      placeholder="Back (Answer / Definition)"
-                      className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs focus:border-[var(--fetch-blue-600)] focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-2">
-                  <input
-                    type="text"
-                    value={card.aliases}
-                    onChange={(e) => handleCardChange(idx, "aliases", e.target.value)}
-                    placeholder="Accepted aliases (optional, comma-separated)"
-                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-1.5 text-[11px] placeholder:text-[var(--text-tertiary)] focus:border-[var(--fetch-blue-600)] focus:outline-none"
-                  />
+                  <span>{title.length}/100</span>
                 </div>
               </div>
-            ))}
-
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleAddCard}
-              className="w-full mt-2"
-            >
-              <Plus size={16} className="mr-1" /> Add Card
-            </Button>
-          </div>
-
-          {error && (
-            <p className="text-xs font-bold text-red-600" role="alert">
-              {error}
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-[var(--border-subtle)]">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Save Deck"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+              <div className="manual-deck-cards-heading">
+                <h3>
+                  <Stack size={23} /> Cards ({cards.length})
+                </h3>
+                <p>
+                  <Lightbulb size={17} /> Tip: Keep your prompts clear and
+                  answers concise for better recall.
+                </p>
+              </div>
+              <div className="manual-deck-card-list">
+                {cards.map((card, idx) => (
+                  <section
+                    key={idx}
+                    className="manual-deck-card"
+                    aria-label={`Card ${idx + 1}`}
+                  >
+                    <div className="manual-deck-card-heading">
+                      <h4>
+                        <span>{idx + 1}</span> Card {idx + 1}
+                      </h4>
+                      <button
+                        type="button"
+                        disabled={cards.length <= 1}
+                        onClick={() => handleRemoveCard(idx)}
+                        aria-label={`Remove card ${idx + 1}`}
+                      >
+                        <Trash size={18} />
+                      </button>
+                    </div>
+                    <div className="manual-deck-card-sides">
+                      <div>
+                        <label htmlFor={`card-front-${idx}`}>
+                          Front (Prompt / Term) <span>*</span>
+                        </label>
+                        <input
+                          id={`card-front-${idx}`}
+                          type="text"
+                          value={card.front}
+                          onChange={(e) =>
+                            handleCardChange(idx, "front", e.target.value)
+                          }
+                          placeholder={
+                            idx % 2
+                              ? "e.g. Mitochondria"
+                              : "e.g. Photosynthesis"
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor={`card-back-${idx}`}>
+                          Back (Answer / Definition) <span>*</span>
+                        </label>
+                        <input
+                          id={`card-back-${idx}`}
+                          type="text"
+                          value={card.back}
+                          onChange={(e) =>
+                            handleCardChange(idx, "back", e.target.value)
+                          }
+                          placeholder={
+                            idx % 2
+                              ? "e.g. Organelle responsible for cellular energy…"
+                              : "e.g. Process by which plants convert light…"
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="manual-deck-aliases">
+                      <label htmlFor={`card-aliases-${idx}`}>
+                        Accepted aliases (optional, comma-separated)
+                      </label>
+                      <input
+                        id={`card-aliases-${idx}`}
+                        type="text"
+                        value={card.aliases}
+                        onChange={(e) =>
+                          handleCardChange(idx, "aliases", e.target.value)
+                        }
+                        placeholder={
+                          idx % 2
+                            ? "e.g. powerhouse of the cell, mitochondrion"
+                            : "e.g. photosynthesis, photo-synthesis, plant energy process"
+                        }
+                      />
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <button
+                className="manual-deck-add"
+                type="button"
+                onClick={handleAddCard}
+              >
+                <strong>
+                  <Plus size={20} weight="bold" /> Add Card
+                </strong>
+                <span>Add another flashcard to this deck</span>
+              </button>
+            </fieldset>
+            {error && (
+              <p className="manual-deck-error" role="alert">
+                {error}
+              </p>
+            )}
+            <footer className="manual-deck-footer">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={loading}
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={loading}>
+                <FloppyDisk size={19} weight="bold" />
+                {loading ? "Creating…" : "Save Deck"}
+              </Button>
+            </footer>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

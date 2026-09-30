@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import "./workspace-refresh.css";
+import "./approved-ui.css";
 
 const nunito = localFont({
   src: "../../public/fonts/Nunito-variable.ttf",

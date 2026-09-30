@@ -153,15 +153,6 @@ export default function MusicPage() {
           </div>
         </div>
 
-        <Image
-          src="/assets/illustrations/fetch-study-companion.png"
-          alt="FETCH listening to study music"
-          width={340}
-          height={230}
-          className="music-hero-mascot select-none pointer-events-none"
-          priority
-        />
-
         <Button asChild variant="secondary" className="relative z-10 rounded-xl font-bold shadow-xs">
           <Link href="/app/pomodoro">
             <Timer weight="bold" />
@@ -253,18 +244,7 @@ export default function MusicPage() {
       <div className="music-main mt-4 grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]">
         {/* Left: Now Playing Stage */}
         <section className="surface-card music-player rounded-3xl border border-[var(--border-subtle)] p-6 shadow-xs flex flex-col md:flex-row items-center gap-6">
-          <div className="relative shrink-0">
-            <Image
-              src="/assets/illustrations/focus-lake.png"
-              alt="Mountain lake at sunset album artwork"
-              width={240}
-              height={240}
-              className="size-48 sm:size-56 rounded-2xl object-cover shadow-sm"
-              priority
-            />
-          </div>
-
-          <div className="min-w-0 flex-1 w-full">
+          <div className="music-player-controls min-w-0 flex-1 w-full">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-tertiary)]">
                 NOW PLAYING

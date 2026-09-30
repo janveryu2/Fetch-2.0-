@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
+import Image from "next/image";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowLeft,
   ArrowsClockwise,
@@ -8,10 +10,18 @@ import {
   XCircle,
   Trophy,
   ArrowCounterClockwise,
+  ArrowRight,
+  BookOpen,
+  Eye,
+  Fire,
+  PawPrint,
+  Target,
+  Smiley,
+  SmileyMeh,
+  SmileySad,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   initializeFlashcardSession,
   processCardAttempt,
@@ -35,12 +45,22 @@ export function FlashcardStudyView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sessionState, setSessionState] = useState<FlashcardSessionState | null>(null);
+  const [sessionState, setSessionState] =
+    useState<FlashcardSessionState | null>(null);
   const [isFlipped, setIsFlipped] = useState(false);
+  const flippedRef = useRef(false);
+  const flipperRef = useRef<HTMLDivElement>(null);
+  const flipAnimationRef = useRef<Animation | null>(null);
   const [typedAnswer, setTypedAnswer] = useState("");
   const [lastGrade, setLastGrade] = useState<FlashcardGradeResult | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingState, setPendingState] =
+    useState<FlashcardSessionState | null>(null);
+  const [confidence, setConfidence] = useState<"Hard" | "Good" | "Easy" | null>(
+    null,
+  );
+  const [recallStreak, setRecallStreak] = useState(0);
 
   const [threeMissCard, setThreeMissCard] = useState<{
     card: FlashcardItem;
@@ -49,13 +69,82 @@ export function FlashcardStudyView({
 
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const setCardFace = useCallback((flipped: boolean) => {
+    if (flipped === flippedRef.current) return;
+
+    const element = flipperRef.current;
+    let startAngle = flippedRef.current ? 180 : 0;
+    if (element) {
+      try {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+        startAngle = (Math.atan2(-matrix.m13, matrix.m11) * 180) / Math.PI;
+      } catch {
+        // Keep the settled angle when the browser cannot parse the current transform.
+      }
+    }
+
+    flipAnimationRef.current?.cancel();
+    flipAnimationRef.current = null;
+    flippedRef.current = flipped;
+    setIsFlipped(flipped);
+
+    if (
+      !element ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const targetAngle = flipped ? 180 : 0;
+    const direction = targetAngle >= startAngle ? 1 : -1;
+    const animation = element.animate(
+      [
+        { transform: `rotateY(${startAngle}deg) scale(1)`, offset: 0 },
+        {
+          transform: `rotateY(${startAngle + direction * 3}deg) scale(0.992)`,
+          offset: 0.14,
+        },
+        {
+          transform: `rotateY(${targetAngle - direction * 2}deg) scale(1.004)`,
+          offset: 0.86,
+        },
+        { transform: `rotateY(${targetAngle}deg) scale(1)`, offset: 1 },
+      ],
+      {
+        duration: 480,
+        easing: "cubic-bezier(0.22, 0.68, 0.27, 1)",
+        fill: "none",
+      },
+    );
+    flipAnimationRef.current = animation;
+    animation.onfinish = () => {
+      if (flipAnimationRef.current === animation) {
+        flipAnimationRef.current = null;
+      }
+    };
+  }, []);
+
+  const flipCard = useCallback(() => {
+    setCardFace(!flippedRef.current);
+  }, [setCardFace]);
+
+  const resetCardFace = useCallback(() => {
+    flipAnimationRef.current?.cancel();
+    flipAnimationRef.current = null;
+    flippedRef.current = false;
+    setIsFlipped(false);
+  }, []);
+
   async function handleStudyAgain() {
     const newClientSessionId = crypto.randomUUID();
     try {
       const res = await fetch("/api/flashcards/session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ artifactId, clientSessionId: newClientSessionId }),
+        body: JSON.stringify({
+          artifactId,
+          clientSessionId: newClientSessionId,
+        }),
       });
       const data = res.ok ? await res.json() : null;
       const sid = data?.sessionId || newClientSessionId;
@@ -63,10 +152,15 @@ export function FlashcardStudyView({
     } catch {
       setSessionState(initializeFlashcardSession(newClientSessionId, cards));
     }
-    setIsFlipped(false);
+    resetCardFace();
     setLastGrade(null);
     setFeedbackMessage(null);
     setThreeMissCard(null);
+    setPendingState(null);
+    setConfidence(null);
+    setRecallStreak(0);
+    setTypedAnswer("");
+    setSubmitting(false);
   }
 
   // Load cards and initialize session
@@ -79,13 +173,21 @@ export function FlashcardStudyView({
       })
       .then((data) => {
         if (mounted && data?.cards) {
-          const rawCards: FlashcardItem[] = data.cards.map((c: { id: string; front: string; back: string; aliases?: string[]; position: number }) => ({
-            id: c.id,
-            front: c.front,
-            back: c.back,
-            aliases: Array.isArray(c.aliases) ? c.aliases : [],
-            position: c.position,
-          }));
+          const rawCards: FlashcardItem[] = data.cards.map(
+            (c: {
+              id: string;
+              front: string;
+              back: string;
+              aliases?: string[];
+              position: number;
+            }) => ({
+              id: c.id,
+              front: c.front,
+              back: c.back,
+              aliases: Array.isArray(c.aliases) ? c.aliases : [],
+              position: c.position,
+            }),
+          );
           setCards(rawCards);
 
           const clientSessionId = crypto.randomUUID();
@@ -100,7 +202,7 @@ export function FlashcardStudyView({
               if (mounted) {
                 const init = initializeFlashcardSession(
                   serverSession?.sessionId || clientSessionId,
-                  rawCards
+                  rawCards,
                 );
                 setSessionState(init);
                 setLoading(false);
@@ -108,7 +210,10 @@ export function FlashcardStudyView({
             })
             .catch(() => {
               if (mounted) {
-                const init = initializeFlashcardSession(clientSessionId, rawCards);
+                const init = initializeFlashcardSession(
+                  clientSessionId,
+                  rawCards,
+                );
                 setSessionState(init);
                 setLoading(false);
               }
@@ -127,10 +232,37 @@ export function FlashcardStudyView({
     };
   }, [artifactId]);
 
+  useEffect(() => {
+    const onSpace = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        event.code !== "Space" ||
+        !sessionState ||
+        sessionState.status !== "active" ||
+        threeMissCard
+      )
+        return;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          'input, textarea, select, button, a, [role="button"], [contenteditable="true"]',
+        )
+      )
+        return;
+      event.preventDefault();
+      flipCard();
+    };
+    window.addEventListener("keydown", onSpace);
+    return () => window.removeEventListener("keydown", onSpace);
+  }, [flipCard, sessionState, threeMissCard]);
+
   if (loading) {
     return (
       <div className="mx-auto flex min-h-[60dvh] max-w-lg flex-col items-center justify-center p-6 text-center">
-        <ArrowsClockwise className="animate-spin text-[var(--fetch-blue-600)]" size={32} />
+        <ArrowsClockwise
+          className="animate-spin text-[var(--fetch-blue-600)]"
+          size={32}
+        />
         <p className="mt-4 font-bold text-sm text-[var(--text-secondary)]">
           Preparing your flashcard study deck...
         </p>
@@ -141,7 +273,9 @@ export function FlashcardStudyView({
   if (error || !sessionState || cards.length === 0) {
     return (
       <div className="mx-auto flex min-h-[60dvh] max-w-lg flex-col items-center justify-center p-6 text-center">
-        <p className="font-bold text-red-600">{error || "No cards in this deck yet."}</p>
+        <p className="font-bold text-red-600">
+          {error || "No cards in this deck yet."}
+        </p>
         <Button asChild variant="secondary" className="mt-4">
           <Link href={`/app/study-packs/${packId}`}>
             <ArrowLeft /> Return to Pack
@@ -156,19 +290,33 @@ export function FlashcardStudyView({
   const currentCard = cards.find((c) => c.id === currentCardId);
 
   // Completion screen when queue is empty or status is reached
-  if (!currentCard || sessionState.status === "mastered" || sessionState.status === "incomplete") {
+  if (
+    !currentCard ||
+    sessionState.status === "mastered" ||
+    sessionState.status === "incomplete"
+  ) {
     const accuracy =
       sessionState.totalCards > 0
-        ? Math.round((sessionState.firstTryCorrectCount / sessionState.totalCards) * 100)
+        ? Math.round(
+            (sessionState.firstTryCorrectCount / sessionState.totalCards) * 100,
+          )
         : 100;
     const isMastered = sessionState.status === "mastered";
 
     return (
       <div className="mx-auto max-w-xl px-4 py-12 text-center">
-        <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${
-          isMastered ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-700"
-        }`}>
-          {isMastered ? <Trophy size={40} weight="fill" /> : <ArrowCounterClockwise size={40} />}
+        <div
+          className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${
+            isMastered
+              ? "bg-emerald-100 text-emerald-600"
+              : "bg-amber-100 text-amber-700"
+          }`}
+        >
+          {isMastered ? (
+            <Trophy size={40} weight="fill" />
+          ) : (
+            <ArrowCounterClockwise size={40} />
+          )}
         </div>
         <h1 className="font-display mt-6 text-3xl font-bold">
           {isMastered ? "Deck Mastered!" : "Session Summary"}
@@ -222,6 +370,8 @@ export function FlashcardStudyView({
     // Process locally for responsive UI
     const result = processCardAttempt(sessionState!, currentCard, typedAnswer);
     setLastGrade(result.grade);
+    setPendingState(result.nextState);
+    setRecallStreak((streak) => (result.grade.isCorrect ? streak + 1 : 0));
 
     if (result.grade.isCorrect) {
       setFeedbackMessage("Correct! Well done.");
@@ -229,7 +379,7 @@ export function FlashcardStudyView({
       setFeedbackMessage(
         result.threeMissesReached
           ? "3 misses on this card."
-          : "Not quite. This card will return later in your session."
+          : "Not quite. This card will return later in your session.",
       );
     }
 
@@ -245,206 +395,305 @@ export function FlashcardStudyView({
       }),
     }).catch(() => {});
 
-    // If 3 misses reached, prompt user with choice modal
+    // Keep feedback on screen until the learner explicitly advances.
     if (result.threeMissesReached) {
-      setTimeout(() => {
-        setThreeMissCard({ card: currentCard, nextState: result.nextState });
-        setSubmitting(false);
-      }, 800);
-      return;
+      setThreeMissCard({ card: currentCard, nextState: result.nextState });
     }
-
-    // Transition to next card after brief feedback
-    setTimeout(() => {
-      setSessionState(result.nextState);
-      setTypedAnswer("");
-      setIsFlipped(false);
-      setLastGrade(null);
-      setFeedbackMessage(null);
-      setSubmitting(false);
-      inputRef.current?.focus();
-    }, 1200);
   }
 
-  const cardsLeft = sessionState.queue.length;
+  function handleNextCard() {
+    if (!pendingState) return;
+    setSessionState(pendingState);
+    setPendingState(null);
+    setConfidence(null);
+    setTypedAnswer("");
+    resetCardFace();
+    setLastGrade(null);
+    setFeedbackMessage(null);
+    setSubmitting(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  const viewedState = pendingState ?? sessionState;
+  const cardsLeft = viewedState.queue.length;
   const progressPercent = Math.round(
-    ((sessionState.totalCards - cardsLeft) / sessionState.totalCards) * 100
+    (viewedState.masteredCount / sessionState.totalCards) * 100,
   );
 
+  const attemptedCards = Object.values(viewedState.cardStats).filter(
+    (stat) => stat.attempts > 0,
+  ).length;
+  const accuracy = attemptedCards
+    ? Math.round((viewedState.firstTryCorrectCount / attemptedCards) * 100)
+    : null;
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      {/* Navigation & Progress Header */}
-      <div className="flex items-center justify-between">
-        <Link
-          href={`/app/study-packs/${packId}`}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--fetch-blue-700)]"
-        >
-          <ArrowLeft size={16} /> Exit Study
+    <section
+      className="workspace flashcard-approved"
+      aria-label={`Study ${title}`}
+    >
+      <h1 className="sr-only">{title} flashcards</h1>
+      <header className="flashcard-progress-header">
+        <Link href={`/app/study-packs/${packId}`}>
+          <ArrowLeft size={23} weight="bold" /> Exit Study
         </Link>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-[var(--text-secondary)]">
-            {cardsLeft} remaining
+        <div className="flashcard-session-stats">
+          <span>
+            <Fire size={22} weight="fill" /> {recallStreak} recall streak
           </span>
-          <Badge tone="blue">
-            {sessionState.firstTryCorrectCount} / {sessionState.totalCards} first-try
-          </Badge>
+          <span>
+            <Target size={22} weight="bold" />{" "}
+            {accuracy === null ? "Ready to practice" : `${accuracy}% accuracy`}
+          </span>
         </div>
+        <div className="flashcard-count">
+          <span>{cardsLeft} remaining</span>
+          <strong>
+            {Math.min(sessionState.totalCards, sessionState.masteredCount + 1)}{" "}
+            / {sessionState.totalCards} cards
+          </strong>
+        </div>
+      </header>
+      <div
+        className="flashcard-progress-track"
+        role="progressbar"
+        aria-label="Cards mastered"
+        aria-valuemin={0}
+        aria-valuemax={sessionState.totalCards}
+        aria-valuenow={viewedState.masteredCount}
+      >
+        <span style={{ width: `${progressPercent}%` }} />
       </div>
-
-      {/* Progress Bar */}
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
+      <div className="flashcard-deck">
         <div
-          className="h-full bg-[var(--fetch-blue-600)] transition-all duration-300"
-          style={{ width: `${progressPercent}%` }}
+          className="flashcard-deck-paper flashcard-deck-paper-one"
+          aria-hidden="true"
         />
-      </div>
-
-      {/* Flashcard Component */}
-      <div className="mt-6">
         <div
-          className={`relative min-h-[260px] w-full rounded-2xl border p-8 transition-all duration-300 flex flex-col justify-between ${
-            isFlipped
-              ? "border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] text-[var(--fetch-blue-950)]"
-              : "border-[var(--border-subtle)] bg-[var(--surface-card)] text-[var(--text-primary)] shadow-sm"
-          }`}
-          onClick={() => setIsFlipped(!isFlipped)}
+          className="flashcard-deck-paper flashcard-deck-paper-two"
+          aria-hidden="true"
+        />
+        <div
+          className="flashcard-flip-target"
           role="button"
           tabIndex={0}
-          aria-label={isFlipped ? "Card back revealed" : "Card front, click to flip"}
+          aria-pressed={isFlipped}
+          aria-describedby={
+            isFlipped ? "flashcard-back-text" : "flashcard-front-text"
+          }
+          aria-label={
+            isFlipped
+              ? "Card back revealed, flip to prompt"
+              : "Card front, click to flip"
+          }
+          onClick={flipCard}
           onKeyDown={(e) => {
             if (e.key === " " || e.key === "Enter") {
-              if (document.activeElement !== inputRef.current) {
-                e.preventDefault();
-                setIsFlipped(!isFlipped);
-              }
+              e.preventDefault();
+              flipCard();
             }
           }}
         >
-          <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[var(--text-tertiary)]">
-            <span>{isFlipped ? "Answer (Back)" : "Prompt (Front)"}</span>
-            <span className="text-[10px] font-normal lowercase opacity-70">
-              click card or press space to flip
-            </span>
-          </div>
-
-          <div className="my-auto py-6 text-center">
-            <h2 className="font-display text-2xl font-bold sm:text-3xl leading-snug">
-              {isFlipped ? currentCard.back : currentCard.front}
-            </h2>
-          </div>
-
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsFlipped(!isFlipped);
-              }}
-              className="text-xs font-extrabold text-[var(--fetch-blue-700)] hover:underline cursor-pointer"
+          <div
+            ref={flipperRef}
+            className={`flashcard-flipper ${isFlipped ? "is-flipped" : ""}`}
+          >
+            <div
+              className="flashcard-face flashcard-face-front"
+              aria-hidden={isFlipped}
             >
-              {isFlipped ? "Flip to prompt" : "Peek at answer"}
-            </button>
+              <div className="flashcard-face-header">
+                <span>
+                  <BookOpen size={25} weight="fill" /> Prompt (Front)
+                </span>
+                <small>
+                  Press space or click to flip <kbd>Space</kbd>
+                </small>
+              </div>
+              <h2 id="flashcard-front-text" className="font-display">
+                {currentCard.front}
+              </h2>
+              <span className="flashcard-flip-hint">
+                <ArrowsClockwise size={25} weight="bold" /> Click to flip card
+              </span>
+              <PawPrint className="flashcard-paw" size={44} weight="fill" />
+            </div>
+            <div
+              className="flashcard-face flashcard-face-back"
+              aria-hidden={!isFlipped}
+            >
+              <div className="flashcard-face-header">
+                <span>
+                  <BookOpen size={25} weight="fill" /> Answer (Back)
+                </span>
+                <small>
+                  Press space or click to flip <kbd>Space</kbd>
+                </small>
+              </div>
+              <h2 id="flashcard-back-text" className="font-display">
+                {currentCard.back}
+              </h2>
+              <span className="flashcard-flip-hint">
+                <ArrowsClockwise size={25} weight="bold" /> Flip to prompt
+              </span>
+              <PawPrint className="flashcard-paw" size={44} weight="fill" />
+            </div>
           </div>
         </div>
-
-        {/* Typed Recall Input */}
-        <form onSubmit={handleSubmitAnswer} className="mt-6">
-          <label htmlFor="flashcard-recall-input" className="block text-xs font-bold text-[var(--text-secondary)]">
-            Type your recall response:
+      </div>
+      <div className="flashcard-recall-row">
+        <form onSubmit={handleSubmitAnswer} className="flashcard-recall-form">
+          <div className="flashcard-recall-heading">
+            <label htmlFor="flashcard-recall-input">
+            Type your recall response
           </label>
-          <div className="mt-2 flex gap-3">
+          <span>Recall before checking</span>
+          </div>
+          <div className="flashcard-recall-controls">
             <input
               id="flashcard-recall-input"
               ref={inputRef}
-              type="text"
               value={typedAnswer}
               onChange={(e) => setTypedAnswer(e.target.value)}
-              placeholder="Type answer to verify active recall..."
+              placeholder="Type your answer here…"
               disabled={submitting}
-              className="flex-1 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 py-3 text-sm focus:border-[var(--fetch-blue-600)] focus:outline-none"
               autoFocus
             />
             <Button type="submit" disabled={!typedAnswer.trim() || submitting}>
-              Check
+              Check answer <ArrowRight size={24} />
             </Button>
           </div>
         </form>
-
-        {/* Immediate Feedback Banner */}
-        {lastGrade && (
+        <aside className="flashcard-companion">
+          <Image
+            src="/assets/mascot/fetch-active.png"
+            alt="FETCH cheering you on"
+            width={110}
+            height={110}
+          />
+          <p>
+            <strong>Before you flip</strong>
+            <span>
+              Take your time.
+            </span>
+          </p>
+        </aside>
+      </div>
+      <div className="flashcard-action-row">
+          <Button variant="secondary" onClick={() => setCardFace(true)}>
+            <Eye size={24} weight="bold" /> Peek answer
+          </Button>
+        <Button variant="secondary" onClick={flipCard}>
+          <ArrowsClockwise size={24} weight="bold" /> Flip card
+        </Button>
+        <div
+          className="flashcard-confidence"
+          role="group"
+          aria-label="Recall confidence. Typed answers determine mastery."
+        >
+          {(
+            [
+              { label: "Hard", hint: "I was unsure", Icon: SmileySad },
+              { label: "Good", hint: "I knew it", Icon: SmileyMeh },
+              { label: "Easy", hint: "It was easy", Icon: Smiley },
+            ] as const
+          ).map(({ label, hint, Icon }) => (
+            <button
+              key={label}
+              type="button"
+              className={`flashcard-rating flashcard-rating-${label.toLowerCase()}`}
+              aria-pressed={confidence === label}
+              onClick={() => setConfidence(label)}
+              title="Rate your confidence. Check your typed answer to record mastery."
+            >
+              <Icon size={37} weight="fill" />
+              <span>
+                <strong>{label}</strong>
+                <small>{hint}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {lastGrade && (
+        <div
+          className={`flashcard-feedback ${lastGrade.isCorrect ? "is-correct" : "is-incorrect"}`}
+        >
           <div
             role="status"
             aria-live="polite"
-            className={`mt-4 flex items-start gap-3 rounded-xl p-4 text-sm font-bold ${
-              lastGrade.isCorrect
-                ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
-                : "bg-red-50 text-red-900 border border-red-200"
-            }`}
+            className="flashcard-feedback-content"
           >
             {lastGrade.isCorrect ? (
-              <CheckCircle size={22} className="text-emerald-600 shrink-0 mt-0.5" />
+              <CheckCircle size={58} weight="fill" />
             ) : (
-              <XCircle size={22} className="text-red-600 shrink-0 mt-0.5" />
+              <XCircle size={58} weight="fill" />
             )}
             <div>
-              <p>{feedbackMessage}</p>
+              <h2 className="font-display">
+                {lastGrade.isCorrect ? "Correct!" : "Keep practicing"}
+              </h2>
+              <p>{lastGrade.isCorrect ? currentCard.back : feedbackMessage}</p>
               {!lastGrade.isCorrect && (
-                <p className="mt-1 text-xs font-normal text-red-800">
-                  Expected: <strong className="font-bold">{currentCard.back}</strong>
+                <p>
+                  Expected: <strong>{currentCard.back}</strong>
                 </p>
               )}
             </div>
           </div>
-        )}
-
-        {/* 3-Miss Choice Modal */}
-        {threeMissCard && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="three-miss-heading"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          >
-            <div className="surface-card w-full max-w-md p-6 shadow-xl text-center">
-              <h2 id="three-miss-heading" className="font-display text-xl font-bold">
-                Tough Card Detected
-              </h2>
-              <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                You have missed &ldquo;{threeMissCard.card.front}&rdquo; 3 times in this session.
-              </p>
-              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                Would you like to keep practicing or end this session as incomplete for now?
-              </p>
-              <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
-                <Button
-                  onClick={() => {
-                    setSessionState(threeMissCard.nextState);
-                    setThreeMissCard(null);
-                    setTypedAnswer("");
-                    setIsFlipped(false);
-                    setLastGrade(null);
-                    setFeedbackMessage(null);
-                    setSubmitting(false);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  Continue studying
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setSessionState((prev) => (prev ? { ...prev, status: "incomplete" } : null));
-                    setThreeMissCard(null);
-                    setSubmitting(false);
-                  }}
-                >
-                  End session as incomplete
-                </Button>
-              </div>
+          <Button onClick={handleNextCard}>
+            Next card <ArrowRight size={24} />
+          </Button>
+        </div>
+      )}
+      <Dialog.Root
+        open={!!threeMissCard}
+        onOpenChange={(open) => {
+          if (!open && threeMissCard) {
+            handleNextCard();
+            setThreeMissCard(null);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="manual-deck-overlay" />
+          <Dialog.Content className="flashcard-retry-dialog">
+            <Dialog.Title className="font-display text-xl font-bold">
+              Tough Card Detected
+            </Dialog.Title>
+            <Dialog.Description className="mt-3 text-sm text-[var(--text-secondary)]">
+              You have missed &ldquo;{threeMissCard?.card.front}&rdquo; 3 times
+              in this session. Keep practicing or end this session as incomplete
+              for now.
+            </Dialog.Description>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button
+                onClick={() => {
+                  handleNextCard();
+                  setThreeMissCard(null);
+                }}
+              >
+                Continue studying
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSessionState(
+                    threeMissCard
+                      ? { ...threeMissCard.nextState, status: "incomplete" }
+                      : sessionState,
+                  );
+                  setThreeMissCard(null);
+                  setPendingState(null);
+                  setSubmitting(false);
+                }}
+              >
+                End session as incomplete
+              </Button>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </section>
   );
 }
