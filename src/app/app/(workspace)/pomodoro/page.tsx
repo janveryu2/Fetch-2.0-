@@ -118,7 +118,7 @@ export default function PomodoroPage() {
 
       return {
         completedTodayCount: count,
-        streakDays: Math.max(1, streak),
+        streakDays: streak,
         completedMinutesText: minutesText,
       };
     }, [attempts, timer.completed, timer.durations.Focus]);
@@ -247,8 +247,12 @@ export default function PomodoroPage() {
             </div>
           </div>
 
+          <div className="pomodoro-mobile-art" aria-hidden="true">
+            <Image src="/assets/backgrounds/pomodoro-timer.webp" alt="" width={1586} height={992} sizes="(max-width: 1279px) 360px, 1px" />
+          </div>
+
           {/* Action Buttons Row */}
-          <div className="relative z-10 flex flex-wrap items-center justify-center gap-3">
+          <div className="pomodoro-actions relative z-10 flex flex-wrap items-center justify-center gap-3">
             {timer.completed ? (
               <button
                 type="button"
@@ -682,13 +686,7 @@ export default function PomodoroPage() {
             <p className="text-xs font-semibold leading-relaxed text-[var(--text-primary)]">
               {STUDY_TIPS[tipIndex]}
             </p>
-            <Image
-              src="/assets/mascot/fetch-seated.png"
-              alt=""
-              width={88}
-              height={88}
-              className="pomodoro-tip-mascot pointer-events-none select-none"
-            />
+            <Lightbulb size={32} className="pomodoro-tip-icon" aria-hidden="true" />
           </div>
         </div>
       </div>

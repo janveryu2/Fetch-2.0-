@@ -16,6 +16,7 @@ import {
   MusicNotes,
   CaretRight,
   X,
+  UserCircle,
 } from "@phosphor-icons/react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
@@ -207,7 +208,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </>
   );
 
-  const accountCardContent = (
+  const accountCardContent = (compact = false) => (
     <div className="fetch-account-card rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-2.5 text-xs">
       <Link
         href="/app/settings"
@@ -215,13 +216,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="flex items-center gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-[var(--surface-subtle)]"
       >
         <div className="relative size-9 shrink-0">
-          <Image
+          {compact ? <UserCircle size={36} className="text-[var(--fetch-blue-700)]" aria-hidden="true" /> : <Image
             src="/assets/mascot/fetch-logo.png"
             alt=""
             width={36}
             height={36}
             className="size-9 rounded-xl object-cover"
-          />
+          />}
           <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-[#10b981] ring-2 ring-[var(--surface-card)]" />
         </div>
         <div className="min-w-0 flex-1">
@@ -368,7 +369,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Account Card at bottom */}
-        {accountCardContent}
+        {accountCardContent()}
       </aside>
       <header className="fetch-mobile-header sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 lg:hidden">
         <FetchBrand />
@@ -436,13 +437,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Study tools, community, and settings.
               </Dialog.Description>
               <nav aria-label="All destinations" className="fetch-more-grid">
-                {groups.flatMap(group => group.items).map(({ href, label, icon: Icon }) => (
+                {groups.flatMap(group => group.items).map(({ href, label }) => (
                   <Link key={href} href={href} onClick={() => setOpen(false)} aria-current={isActive(href) ? "page" : undefined}>
-                    <Icon size={23} />{label}
+                    <NavArtwork name={label} size={32} />{label}
                   </Link>
                 ))}
               </nav>
-              <div className="fetch-more-account mt-4">{accountCardContent}</div>
+              <div className="fetch-more-account mt-4">{accountCardContent(true)}</div>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>

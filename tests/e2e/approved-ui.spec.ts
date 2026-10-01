@@ -128,7 +128,7 @@ test("approved screens fit four widths and both themes", async ({
   }
 });
 
-test("Pomodoro timer, tip mascot and Home search remain clear across themes and widths", async ({
+test("Pomodoro timer, tip icon and Home search remain clear across themes and widths", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop");
@@ -172,7 +172,7 @@ test("Pomodoro timer, tip mascot and Home search remain clear across themes and 
 
         const card = page.locator(".pomodoro-study-tip");
         const bounds = await card.boundingBox();
-        const mascot = card.locator(".pomodoro-tip-mascot");
+        const mascot = card.locator(".pomodoro-tip-icon");
         const mascotBounds = await mascot.boundingBox();
         const copyBounds = await card
           .locator(".pomodoro-study-tip-body p")
@@ -186,9 +186,7 @@ test("Pomodoro timer, tip mascot and Home search remain clear across themes and 
         expect(copyBounds!.x + copyBounds!.width).toBeLessThanOrEqual(
           mascotBounds!.x + 1,
         );
-        expect(
-          await mascot.evaluate((image: HTMLImageElement) => image.naturalWidth),
-        ).toBeGreaterThan(0);
+        await expect(mascot).toHaveAttribute("viewBox", /\d/);
         expect(
           await card.evaluate((element) => getComputedStyle(element).overflow),
         ).not.toBe("hidden");
@@ -501,6 +499,7 @@ test("local music plays, seeks, switches tracks and persists across navigation",
   expect(await audio.evaluate((el: HTMLAudioElement) => el.volume)).toBe(0.4);
   await expect(page.getByLabel("Volume level")).toHaveValue("40");
   const dock = page.getByRole("region", { name: "Now playing", exact: true });
+  await dock.getByRole("button", { name: "Show player controls" }).click();
   await dock.getByRole("button", { name: "Next track" }).click();
   await expect(dock).toContainText("Break.wav");
   await dock.getByRole("button", { name: "Previous track" }).click();
@@ -512,7 +511,8 @@ test("local music plays, seeks, switches tracks and persists across navigation",
     .click();
   await expect(audio).toHaveAttribute("src", src!);
   await dock.getByRole("button", { name: "Clear local playlist" }).click();
-  await expect(audio).toHaveCount(0);
+  await expect(dock).toBeHidden();
+  await expect(audio).not.toHaveAttribute("src", /blob:/);
 });
 
 test("YouTube and curated music keep the persistent external player", async ({
@@ -526,17 +526,17 @@ test("YouTube and curated music keep the persistent external player", async ({
   );
   await page.goto("/app/music");
   await page
-    .getByRole("button", { name: "YouTube audio", exact: true })
+    .getByRole("button", { name: "YouTube", exact: true })
     .click();
   await page
     .getByLabel("YouTube video URL")
     .fill("https://example.com/watch?v=M7lc1UVf-VE");
-  await page.getByRole("button", { name: /Extract audio/ }).click();
+  await page.getByRole("button", { name: "Play stream", exact: true }).click();
   await expect(page.locator("#app-main").getByRole("alert")).toBeVisible();
   await page
     .getByLabel("YouTube video URL")
     .fill("https://youtu.be/M7lc1UVf-VE");
-  await page.getByRole("button", { name: /Extract audio/ }).click();
+  await page.getByRole("button", { name: "Play stream", exact: true }).click();
   await expect(page.locator("iframe")).toHaveAttribute(
     "src",
     /youtube-nocookie\.com\/embed\/M7lc1UVf-VE/,
@@ -549,6 +549,7 @@ test("YouTube and curated music keep the persistent external player", async ({
   await expect(page.locator("iframe")).toHaveCount(1);
   await page.getByRole("button", { name: "Stop study stream" }).click();
   await page.goto("/app/music");
-  await page.getByRole("button", { name: "Play music", exact: true }).click();
+  await page.getByRole("button", { name: "Classical", exact: true }).click();
+  await page.locator("#music-curated .music-media-play").first().click();
   await expect(page.locator("iframe")).toHaveCount(1);
 });

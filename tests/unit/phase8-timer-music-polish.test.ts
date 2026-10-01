@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   getCuratedTracks,
   findCuratedTrackById,
+  STUDY_MOODS,
+  tracksForMood,
 } from "@/lib/music/curated-tracks";
 import {
   playStudySound,
@@ -21,9 +23,9 @@ import {
 } from "@/lib/focus-timer";
 
 describe("Phase 8: Curated Music Tracks (Section B5)", () => {
-  it("provides the three approved curated study streams with accurate video IDs and categories", () => {
+  it("preserves the original verified study links in the expanded catalog", () => {
     const tracks = getCuratedTracks();
-    expect(tracks.length).toBe(3);
+    expect(tracks.length).toBeGreaterThanOrEqual(70);
 
     const vivaldi = findCuratedTrackById("vivaldi-four-seasons");
     expect(vivaldi).toBeDefined();
@@ -41,12 +43,35 @@ describe("Phase 8: Curated Music Tracks (Section B5)", () => {
     const brainPower = findCuratedTrackById("classical-study-brain-power");
     expect(brainPower).toBeDefined();
     expect(brainPower?.videoId).toBe("BMuknRb7woc");
-    expect(brainPower?.category).toBe("Focus");
+    expect(brainPower?.category).toBe("Classical");
     expect(brainPower?.embedUrl).toContain("youtube-nocookie.com/embed/BMuknRb7woc");
   });
 
   it("returns undefined for non-existent track IDs", () => {
     expect(findCuratedTrackById("non-existent-track")).toBeUndefined();
+  });
+
+  it("offers at least ten distinct real items in every study mood", () => {
+    for (const mood of STUDY_MOODS) {
+      const items = tracksForMood(mood);
+      expect(items.length, mood).toBeGreaterThanOrEqual(10);
+      expect(new Set(items.map(item => item.id)).size).toBe(items.length);
+    }
+  });
+
+  it("uses publisher artwork, HTTPS sources and truthful playback metadata", () => {
+    for (const item of getCuratedTracks()) {
+      expect(item.sourceUrl).toMatch(/^https:\/\//);
+      expect(item.artwork).toMatch(/^https:\/\//);
+      expect(item.creator.length).toBeGreaterThan(0);
+      if (item.source === "radio") {
+        expect(item.audioUrl).toMatch(/^https:\/\/ice\d*\.somafm\.com\//);
+        expect(item.durationSeconds).toBeUndefined();
+      } else {
+        expect(item.embedUrl).toContain("youtube-nocookie.com/embed/" + item.videoId);
+        expect(item.videoId).toMatch(/^[\w-]{11}$/);
+      }
+    }
   });
 });
 

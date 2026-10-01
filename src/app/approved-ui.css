@@ -111,9 +111,8 @@
   color: #ac284a;
 }
 [data-theme="dark"] .music-hero > div:first-child {
-  background: #10264aeb;
-  padding: 16px;
-  border-radius: 16px;
+  background: transparent;
+  padding: 0;
 }
 [data-theme="dark"] .music-hero .page-title {
   color: var(--text-primary);
@@ -415,11 +414,10 @@ body:has(.home-approved) .fetch-sidebar .fetch-nav-link[aria-current="page"] {
 }
 [data-theme="dark"] .home-approved-scene .page-title,
 [data-theme="dark"] .home-approved-scene .page-description {
-  background: #10264aed;
-  padding: 8px 12px;
-  border-radius: 10px;
-  color: #edf5ff;
-  width: fit-content;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: #0b1b3a;
 }
 [data-theme="dark"] .home-approved-intro {
   background: #10264af2;
@@ -1747,9 +1745,8 @@ body:has(.home-approved) .fetch-sidebar .fetch-nav-link[aria-current="page"] {
 }
 /* Keep hero copy legible independently of the operating system theme. */
 .music-refresh .music-hero > div:first-child {
-  padding: 20px;
-  border-radius: 18px;
-  background: var(--surface-card);
+  padding: 0;
+  background: transparent;
 }
 
 .live-refresh { --live-accent: var(--fetch-blue-700); }

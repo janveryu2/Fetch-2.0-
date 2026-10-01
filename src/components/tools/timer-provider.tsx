@@ -9,7 +9,8 @@ import {
   type SetStateAction,
 } from "react";
 import Link from "next/link";
-import { Timer } from "@phosphor-icons/react";
+import { Timer, X } from "@phosphor-icons/react";
+import { usePathname } from "next/navigation";
 import {
   createInitialTimer,
   restoreTimer,
@@ -49,26 +50,12 @@ export function TimerProvider({
   preferredFocusMinutes?: number;
 }) {
   const { userId, mode } = useDemo();
+  const pathname = usePathname();
+  const [completionDismissed, setCompletionDismissed] = useState(false);
   const [timer, setTimer] = useState<FocusTimer>(() => createInitialTimer(preferredFocusMinutes));
   const [ready, setReady] = useState(false);
-  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      const s = localStorage.getItem("fetch-timer-sound");
-      return s !== null ? s === "true" : true;
-    } catch {
-      return true;
-    }
-  });
-  const [notificationsEnabled, setNotificationsEnabledState] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      const n = localStorage.getItem("fetch-timer-notifications");
-      return n !== null ? n === "true" : false;
-    } catch {
-      return false;
-    }
-  });
+  const [soundEnabled, setSoundEnabledState] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabledState] = useState(false);
   const queuedFocusMinutesRef = useRef<number | null>(null);
   const initialMountRef = useRef(true);
   const hasAnnouncedCompletionRef = useRef(false);
@@ -100,6 +87,11 @@ export function TimerProvider({
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       try {
+        // Read browser preferences after hydration so saved switches match SSR.
+        const sound = localStorage.getItem("fetch-timer-sound");
+        const notifications = localStorage.getItem("fetch-timer-notifications");
+        if (sound !== null) setSoundEnabledState(sound === "true");
+        if (notifications !== null) setNotificationsEnabledState(notifications === "true");
         let loaded: FocusTimer | null = null;
         const raw = localStorage.getItem(storageKey);
         if (raw) {
@@ -245,6 +237,7 @@ export function TimerProvider({
   }, [timer.completed, timer.mode, timer.durations, timer.packId, soundEnabled, notificationsEnabled]);
 
   const startTimer = () => {
+    setCompletionDismissed(false);
     if (soundEnabled) {
       const sessionToken = `start-${timer.mode}-${Date.now()}`;
       void playStudySound("start-bark", sessionToken, { soundEnabled });
@@ -261,6 +254,7 @@ export function TimerProvider({
   };
 
   const resetTimer = (newMode?: TimerMode) => {
+    setCompletionDismissed(false);
     setTimer((t) => {
       const targetMode = newMode || t.mode;
       return {
@@ -290,17 +284,18 @@ export function TimerProvider({
       }}
     >
       {children}
-      {(timer.endAt !== null || timer.completed) && (
-        <div className="timer-mini fixed bottom-[84px] right-4 z-30 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 py-2 shadow-sm lg:bottom-4">
+      {pathname !== "/app/pomodoro" && (timer.endAt !== null || (timer.completed && !completionDismissed)) && (
+        <div className="timer-mini fixed bottom-[84px] right-4 z-30 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-3 py-1 shadow-sm lg:bottom-4" data-completed={timer.completed}>
           <Link
             href="/app/pomodoro"
-            className="flex min-h-9 items-center gap-2 text-sm font-extrabold"
+            className="flex min-h-11 items-center gap-2 text-xs font-extrabold"
           >
             <Timer size={20} />
             {timer.completed
               ? "Session complete"
               : `${timer.mode} · ${timerText(timer.remaining)}`}
           </Link>
+          {timer.completed && <button type="button" aria-label="Dismiss timer completion" onClick={() => setCompletionDismissed(true)} className="flex size-11 items-center justify-center"><X size={16} /></button>}
           <span role="status" className="sr-only">
             {timer.completed ? "Your timer session is complete." : ""}
           </span>

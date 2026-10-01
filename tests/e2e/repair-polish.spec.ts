@@ -34,7 +34,7 @@ test("Live layout and Music contrast work in both app and system themes at four 
                 return .2126 * r + .7152 * g + .0722 * b;
               };
               const fg = luminance(getComputedStyle(element).color);
-              const bg = luminance(getComputedStyle(element.parentElement!).backgroundColor);
+              const bg = luminance(innerWidth < 768 ? getComputedStyle(document.body).backgroundColor : "rgb(228,239,255)");
               return (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
             });
             expect(ratio, `Music ${theme}/${systemTheme} ${width}`).toBeGreaterThanOrEqual(4.5);

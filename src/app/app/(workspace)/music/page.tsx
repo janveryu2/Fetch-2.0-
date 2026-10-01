@@ -4,751 +4,578 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   ArrowSquareOut,
-  Headphones,
-  MusicNotes,
-  Play,
-  Pause,
-  Stop,
-  Timer,
-  UploadSimple,
   Brain,
   CloudRain,
   Guitar,
-  Heart,
+  Headphones,
   Leaf,
   Lightning,
+  MusicNotes,
+  Pause,
+  Play,
   Playlist,
   SkipBack,
   SkipForward,
   SpeakerHigh,
-  Sparkle,
-  DotsThreeVertical,
-  Info,
-  LinkSimple,
+  Timer,
+  UploadSimple,
   YoutubeLogo,
 } from "@phosphor-icons/react";
 import { useMusic } from "@/components/tools/music-provider";
+import { MusicArtwork } from "@/components/tools/music-artwork";
 import { Button } from "@/components/ui/button";
 import { youtubeEmbed } from "@/lib/youtube";
-import { CURATED_TRACKS, type CuratedTrack } from "@/lib/music/curated-tracks";
+import {
+  CURATED_TRACKS,
+  STUDY_MOODS,
+  trackDuration,
+  tracksForMood,
+  type CuratedTrack,
+  type StudyMood,
+} from "@/lib/music/curated-tracks";
 import { cn } from "@/lib/cn";
+
+const moodIcons = [
+  Brain,
+  Headphones,
+  MusicNotes,
+  Leaf,
+  CloudRain,
+  Guitar,
+  Lightning,
+];
+type Source = "Curated music" | "Local files" | "YouTube";
+
+function MusicTrackRow({
+  track,
+  selected,
+  playing,
+  onPlay,
+}: {
+  track: CuratedTrack;
+  selected: boolean;
+  playing: boolean;
+  onPlay: (track: CuratedTrack) => void;
+}) {
+  return (
+    <div className="music-track-row" data-active={selected}>
+      <button
+        type="button"
+        onClick={() => onPlay(track)}
+        aria-label={(selected && playing ? "Pause " : "Play ") + track.title}
+        className="music-track-main"
+      >
+        <MusicArtwork src={track.artwork} sizes="56px" />
+        <span>
+          <strong>{track.title}</strong>
+          <small>
+            {track.creator} · {trackDuration(track)}
+          </small>
+        </span>
+        {selected && playing ? (
+          <Pause size={18} weight="fill" />
+        ) : (
+          <Play size={18} weight="fill" />
+        )}
+      </button>
+      <a
+        href={track.sourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={"Open source for " + track.title}
+        className="music-track-source"
+      >
+        <ArrowSquareOut size={18} />
+      </a>
+    </div>
+  );
+}
 
 export default function MusicPage() {
   const music = useMusic();
-  const [tab, setTab] = useState("Curated music");
+  const [tab, setTab] = useState<Source>("Curated music");
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
-  const [mood, setMood] = useState("All");
-  const [liked, setLiked] = useState(false);
-  const { volume, setVolume } = music;
+  const [mood, setMood] = useState<StudyMood | "All">("All");
   const [dragging, setDragging] = useState(false);
-  const [showAllCurated, setShowAllCurated] = useState(false);
+  const [search, setSearch] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const moodTracks = tracksForMood(mood);
+  const visibleTracks = moodTracks.filter((track) =>
+    (track.title + " " + track.creator)
+      .toLowerCase()
+      .includes(search.toLowerCase().trim()),
+  );
+  const displayedTracks = showAll ? visibleTracks : visibleTracks.slice(0, 6);
+  const active = music.externalTrack;
+  const local = !active && music.tracks[music.index];
+  const activeTitle = active?.title ?? (local ? local.name : undefined);
+  const current = moodTracks.findIndex((track) => track.id === active?.id);
+  const nextTracks =
+    current < 0
+      ? moodTracks.slice(0, 5)
+      : [
+          ...moodTracks.slice(current + 1),
+          ...moodTracks.slice(0, current),
+        ].slice(0, 5);
+  const hasMedia = !!active || !!local;
 
-  const activeTrackTitle = music.externalTrack?.title ?? music.tracks[music.index]?.name;
-  const isPlaying = !!music.externalTrack || music.playing;
-  const visibleTracks = mood === "All"
-    ? CURATED_TRACKS
-    : CURATED_TRACKS.filter((track) => track.category.toLowerCase() === mood.toLowerCase());
-
-  function toggleCuratedTrack(track: CuratedTrack) {
-    if (music.externalTrack?.id === track.id) {
-      music.stopExternalTrack();
-    } else {
-      music.playExternalTrack({
-        id: track.id,
-        title: track.title,
-        category: track.category,
-        embedUrl: track.embedUrl,
-        watchUrl: track.watchUrl,
-      });
+  function playTrack(track: CuratedTrack) {
+    if (active?.id === track.id) music.togglePlayback();
+    else music.playExternalTrack(track);
+  }
+  function moveTrack(offset: number) {
+    if (local)
+      music.select(
+        (music.index + offset + music.tracks.length) % music.tracks.length,
+      );
+    else {
+      const pool = current >= 0 ? moodTracks : CURATED_TRACKS;
+      const index = pool.findIndex((track) => track.id === active?.id);
+      playTrack(pool[(index + offset + pool.length) % pool.length]);
     }
   }
-
-  function handleMainPlayToggle() {
-    if (music.externalTrack) {
-      music.stopExternalTrack();
-    } else if (music.tracks.length > 0) {
-      music.togglePlayback();
-    } else if (CURATED_TRACKS.length > 0) {
-      toggleCuratedTrack(CURATED_TRACKS[0]);
-    }
+  function selectMood(next: StudyMood | "All") {
+    setMood(next);
+    setShowAll(false);
+    setSearch("");
+    setTab("Curated music");
   }
-
-  function handleNextTrack() {
-    if (music.tracks.length > 1) {
-      music.select((music.index + 1) % music.tracks.length);
-    } else if (CURATED_TRACKS.length > 0) {
-      const currentIdx = CURATED_TRACKS.findIndex((t) => t.id === music.externalTrack?.id);
-      const nextIdx = (currentIdx + 1) % CURATED_TRACKS.length;
-      toggleCuratedTrack(CURATED_TRACKS[nextIdx]);
-    }
-  }
-
-  function handlePrevTrack() {
-    if (music.tracks.length > 1) {
-      music.select((music.index - 1 + music.tracks.length) % music.tracks.length);
-    } else if (CURATED_TRACKS.length > 0) {
-      const currentIdx = CURATED_TRACKS.findIndex((t) => t.id === music.externalTrack?.id);
-      const prevIdx = (currentIdx - 1 + CURATED_TRACKS.length) % CURATED_TRACKS.length;
-      toggleCuratedTrack(CURATED_TRACKS[prevIdx]);
-    }
-  }
-
-  function selectSource(nextTab: string) {
-    setTab(nextTab);
-    setError("");
-    const target =
-      nextTab === "Local files"
-        ? "music-local"
-        : nextTab === "YouTube audio"
-          ? "music-youtube"
-          : "music-curated";
-    requestAnimationFrame(() =>
-      document.getElementById(target)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" }),
-    );
-  }
+  const seekable = hasMedia && !active?.embedUrl && music.duration > 0;
+  const time = (seconds: number) =>
+    Math.floor(seconds / 60) +
+    ":" +
+    String(Math.floor(seconds % 60)).padStart(2, "0");
 
   return (
     <div className="workspace workspace--wide music-refresh" data-source={tab}>
-      {/* Hero Banner with Mascot Artwork & Benefits */}
-      <div className="music-hero relative flex flex-wrap items-start justify-between gap-6 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#F0F7FF] via-[#E4EFFF] to-[#CDE2FD] p-6 sm:p-8 shadow-xs">
-        <div className="relative z-10 max-w-[620px]">
-          <h1 className="page-title font-display text-3xl sm:text-4xl font-black tracking-tight text-[var(--text-primary)]">
-            Your space to tune in.
-          </h1>
-          <p className="page-description mt-2 text-sm sm:text-base text-[var(--text-secondary)]">
-            Study with music. Find your focus. Keep the good vibes going.
+      <header className="music-hero relative overflow-hidden rounded-3xl">
+        <div>
+          <h1 className="page-title">Your space to tune in.</h1>
+          <p className="page-description">
+            Music and quiet sounds for your next study session.
           </p>
-
-          <div className="music-benefits mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-[#1068E9]">
-                <Headphones size={22} weight="bold" />
-              </span>
-              <div>
-                <strong className="block text-xs font-black text-[var(--text-primary)]">Boost focus</strong>
-                <small className="block text-[11px] text-[var(--text-secondary)]">Music that helps you concentrate</small>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-600">
-                <Brain size={22} weight="bold" />
-              </span>
-              <div>
-                <strong className="block text-xs font-black text-[var(--text-primary)]">Reduce stress</strong>
-                <small className="block text-[11px] text-[var(--text-secondary)]">Calming sounds for study time</small>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-xs backdrop-blur-xs">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-500">
-                <Heart size={22} weight="bold" />
-              </span>
-              <div>
-                <strong className="block text-xs font-black text-[var(--text-primary)]">Make it yours</strong>
-                <small className="block text-[11px] text-[var(--text-secondary)]">Play your favorites, your way</small>
-              </div>
-            </div>
-          </div>
         </div>
-
-        <Button asChild variant="secondary" className="relative z-10 rounded-xl font-bold shadow-xs">
+        <div className="music-hero-art" aria-hidden="true">
+          <Image
+            src="/assets/backgrounds/music-studio-top.webp"
+            alt=""
+            width={2172}
+            height={724}
+            sizes="(max-width: 767px) 100vw, 1px"
+          />
+        </div>
+        <Button asChild variant="secondary">
           <Link href="/app/pomodoro">
-            <Timer weight="bold" />
-            Pomodoro Timer &rarr;
+            <Timer /> Pomodoro Timer
           </Link>
         </Button>
+      </header>
+
+      <div className="music-toolbar">
+        <div className="segment" aria-label="Music sources">
+          {(["Curated music", "Local files", "YouTube"] as Source[]).map(
+            (source, index) => {
+              const Icon = [MusicNotes, UploadSimple, YoutubeLogo][index];
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  aria-pressed={tab === source}
+                  onClick={() => setTab(source)}
+                >
+                  <Icon size={18} />
+                  {source}
+                </button>
+              );
+            },
+          )}
+        </div>
       </div>
 
-      {/* Active Stream Alert Banner if external track is playing */}
-      {music.externalTrack && (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--fetch-blue-300)] bg-[var(--fetch-blue-50)] p-4 sm:p-5 shadow-xs">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fetch-blue-600)] text-white shadow-sm">
-              <Headphones size={22} weight="bold" />
+      <div className="music-main">
+        <section
+          aria-label="Music controls"
+          className="surface-card music-player"
+        >
+          <MusicArtwork
+            src={active?.artwork}
+            className="music-now-art"
+            sizes="(max-width: 767px) 104px, 200px"
+          />
+          <div className="music-player-controls">
+            <span className="music-player-label">
+              {hasMedia ? "Now playing" : "Your study soundtrack"}
             </span>
-            <div className="min-w-0">
-              <span className="inline-block text-[10px] font-black uppercase tracking-wider text-[var(--fetch-blue-700)]">
-                Active Study Stream · {music.externalTrack.category || "Online"}
-              </span>
-              <h3 className="truncate text-base font-extrabold text-[var(--fetch-blue-950)]">
-                {music.externalTrack.title}
-              </h3>
-              <p className="text-xs text-[var(--fetch-blue-800)]">
-                Continuous playback is docked below and continues while you study across FETCH.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {music.externalTrack.watchUrl && (
-              <Button asChild variant="secondary" size="sm" className="rounded-xl text-xs font-bold">
-                <a
-                  href={music.externalTrack.watchUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5"
-                >
-                  <ArrowSquareOut size={15} />
-                  <span>Open on YouTube</span>
-                </a>
-              </Button>
-            )}
-            <Button
-              variant="quiet"
-              size="sm"
-              onClick={music.stopExternalTrack}
-              className="flex items-center gap-1 text-red-600 hover:bg-red-50 hover:text-red-700 font-bold"
-            >
-              <Stop size={15} weight="bold" />
-              <span>Stop Stream</span>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Source Navigation Tabs & Background Play Notice */}
-      <div className="music-toolbar mt-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 rounded-2xl bg-[var(--surface-subtle)] p-1 border border-[var(--border-subtle)]">
-          {[
-            { id: "Curated music", icon: MusicNotes },
-            { id: "Local files", icon: UploadSimple },
-            { id: "YouTube audio", icon: Play },
-          ].map(({ id, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={tab === id}
-              onClick={() => selectSource(id)}
-              className={cn(
-                "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition-all cursor-pointer",
-                tab === id
-                  ? "bg-[#1068E9] text-white shadow-xs"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-card)] hover:text-[var(--text-primary)]",
-              )}
-            >
-              <Icon size={16} weight="bold" />
-              {id}
-            </button>
-          ))}
-        </div>
-
-        <p className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-bold text-emerald-800">
-          <Headphones size={16} weight="bold" />
-          <span>Audio-only mode · Keep studying — music continues in the background.</span>
-        </p>
-      </div>
-
-      {/* Main Now Playing Panel & Up Next Queue */}
-      <div className="music-main mt-4 grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(280px,1fr)]">
-        {/* Left: Now Playing Stage */}
-        <section className="surface-card music-player rounded-3xl border border-[var(--border-subtle)] p-6 shadow-xs flex flex-col md:flex-row items-center gap-6">
-          <div className="music-player-controls min-w-0 flex-1 w-full">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-tertiary)]">
-                NOW PLAYING
-              </span>
-              <button
-                type="button"
-                onClick={() => setLiked(!liked)}
-                disabled={!activeTrackTitle}
-                aria-label={liked ? "Unlike track" : "Like track"}
-                className="text-[var(--text-tertiary)] hover:text-rose-500 transition-colors cursor-pointer"
-              >
-                <Heart size={20} weight={liked ? "fill" : "regular"} className={liked ? "text-rose-500" : ""} />
-              </button>
-            </div>
-
-            <h2 className="font-display mt-1 line-clamp-1 text-2xl font-black text-[var(--text-primary)]">
-              {activeTrackTitle ?? "Choose your study music"}
+            <h2 className="font-display">
+              {activeTitle ?? "Choose your study music"}
             </h2>
-            <p className="mt-0.5 text-xs font-bold text-[var(--text-secondary)]">
-              {music.externalTrack?.category ?? (music.tracks.length ? "Local playlist" : "Play a curated stream or add your own audio.")}
+            <p>
+              {active?.creator ??
+                (local
+                  ? "Local device audio"
+                  : "Browse a mood below or add your own audio.")}
             </p>
-
-            {music.tracks.length > 0 && !music.externalTrack && (
-              <div className="music-seek mt-4">
-                <input type="range" aria-label="Track position" min={0} max={music.duration || 1} step={0.1} value={Math.min(music.currentTime, music.duration || 1)} onChange={event => music.seek(Number(event.target.value))} disabled={!music.duration} />
-                <div className="flex justify-between text-xs text-[var(--text-secondary)]"><span>{Math.floor(music.currentTime / 60)}:{String(Math.floor(music.currentTime % 60)).padStart(2, "0")}</span><span>{Math.floor(music.duration / 60)}:{String(Math.floor(music.duration % 60)).padStart(2, "0")}</span></div>
-              </div>
-            )}
-            {/* Audio Controls Bar */}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
-              <div className="flex items-center gap-3">
-
-                <button
-                  type="button"
-                  onClick={handlePrevTrack}
-                  aria-label="Previous track"
-                  className="text-[var(--text-primary)] hover:text-[#1068E9] transition-colors cursor-pointer"
-                >
-                  <SkipBack size={20} weight="fill" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleMainPlayToggle}
-                  aria-label={music.externalTrack ? "Stop music stream" : isPlaying ? "Pause music" : "Play music"}
-                  className="flex size-11 items-center justify-center rounded-full bg-[#1068E9] text-white shadow-md hover:bg-[#0D57C5] transition-transform active:scale-95 cursor-pointer"
-                >
-                  {isPlaying ? <Pause size={20} weight="fill" /> : <Play size={20} weight="fill" className="ml-0.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextTrack}
-                  aria-label="Next track"
-                  className="text-[var(--text-primary)] hover:text-[#1068E9] transition-colors cursor-pointer"
-                >
-                  <SkipForward size={20} weight="fill" />
-                </button>
-
-              </div>
-
-              {/* Volume Slider */}
-              <div className="flex items-center gap-2">
-                <SpeakerHigh size={18} className="text-[var(--text-tertiary)]" />
+            {seekable && (
+              <div className="music-seek">
                 <input
                   type="range"
+                  aria-label="Track position"
                   min={0}
-                  max={100}
-                  value={volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                  aria-label="Volume level"
-                  disabled={!music.tracks.length || !!music.externalTrack}
-                  className="h-1.5 w-20 sm:w-24 cursor-pointer accent-[#1068E9]"
+                  max={music.duration}
+                  step={0.1}
+                  value={Math.min(music.currentTime, music.duration)}
+                  onChange={(event) => music.seek(Number(event.target.value))}
                 />
+                <div>
+                  <span>{time(music.currentTime)}</span>
+                  <span>{time(music.duration)}</span>
+                </div>
               </div>
+            )}
+            <div className="music-transport">
+              <button
+                type="button"
+                aria-label="Previous track"
+                onClick={() => moveTrack(-1)}
+              >
+                <SkipBack size={21} weight="fill" />
+              </button>
+              <button
+                type="button"
+                aria-label={music.playing ? "Pause music" : "Play music"}
+                className="music-play-button"
+                onClick={() =>
+                  hasMedia ? music.togglePlayback() : playTrack(moodTracks[0])
+                }
+              >
+                {music.playing ? (
+                  <Pause size={24} weight="fill" />
+                ) : (
+                  <Play size={24} weight="fill" />
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label="Next track"
+                onClick={() => moveTrack(1)}
+              >
+                <SkipForward size={21} weight="fill" />
+              </button>
             </div>
-          </div>
-        </section>
-
-        {/* Right: Up Next Queue */}
-        <section className="surface-card music-queue rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display flex items-center gap-2 text-base font-bold text-[var(--text-primary)]">
-              <Playlist size={20} className="text-[#1068E9]" weight="bold" />
-              Up next
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                if (music.tracks.length > 0) music.clear();
-                if (music.externalTrack) music.stopExternalTrack();
-              }}
-              className="text-xs font-bold text-[var(--fetch-blue-700)] hover:underline cursor-pointer"
-            >
-              Clear all
-            </button>
-          </div>
-
-          <div className="mt-3.5 space-y-1.5 overflow-y-auto max-h-[300px]">
-            {/* Curated Track Rows */}
-            {CURATED_TRACKS.map((track, i) => {
-              const isActive = music.externalTrack?.id === track.id;
-              return (
-                <button
-                  key={track.id}
-                  type="button"
-                  onClick={() => toggleCuratedTrack(track)}
-                  className={cn(
-                    "music-queue-row flex w-full items-center gap-3 rounded-2xl p-2 text-left transition-colors cursor-pointer",
-                    isActive
-                      ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-900)] font-bold"
-                      : "hover:bg-[var(--surface-subtle)]",
-                  )}
-                >
-                  {isActive ? (
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#1068E9] text-white">
-                      <span className="flex items-end gap-0.5 h-3.5">
-                        <i className="w-0.5 bg-white h-2 animate-pulse" />
-                        <i className="w-0.5 bg-white h-3.5 animate-pulse" />
-                        <i className="w-0.5 bg-white h-2.5 animate-pulse" />
-                      </span>
-                    </span>
-                  ) : (
-                    <Image
-                      src="/assets/illustrations/focus-lake.png"
-                      alt=""
-                      width={40}
-                      height={40}
-                      className="size-10 rounded-xl object-cover"
-                    />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <strong className="block truncate text-xs text-[var(--text-primary)]">{track.title}</strong>
-                    <small className="text-[11px] text-[var(--text-secondary)]">{track.category}</small>
-                  </span>
-                  <span className="text-[11px] font-mono text-[var(--text-tertiary)] shrink-0">
-                    {i === 0 ? "4:12" : i === 1 ? "3:28" : "3:51"}
-                  </span>
-                  <DotsThreeVertical size={16} className="text-[var(--text-tertiary)] shrink-0" />
-                </button>
-              );
-            })}
-
-            {/* Local Track Rows */}
-            {music.tracks.map((track, index) => {
-              const isActive = music.index === index && !music.externalTrack;
-              return (
-                <button
-                  key={track.url}
-                  type="button"
-                  onClick={() => music.select(index)}
-                  className={cn(
-                    "music-queue-row flex w-full items-center gap-3 rounded-2xl p-2 text-left transition-colors cursor-pointer",
-                    isActive
-                      ? "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-900)] font-bold"
-                      : "hover:bg-[var(--surface-subtle)]",
-                  )}
-                >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#1068E9]">
-                    <MusicNotes size={20} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <strong className="block truncate text-xs text-[var(--text-primary)]">{track.name}</strong>
-                    <small className="text-[11px] text-[var(--text-secondary)]">Local file</small>
-                  </span>
-                  <Play size={15} weight="fill" className="text-[var(--text-tertiary)] shrink-0" />
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      {/* Study Moods Chips Row */}
-      <section className="music-moods mt-6">
-        <div className="flex items-center gap-2">
-          <MusicNotes size={20} className="text-[#1068E9]" weight="bold" />
-          <h2 className="font-display text-lg font-bold text-[var(--text-primary)]">Study moods</h2>
-          <span className="text-xs text-[var(--text-secondary)]">Pick a vibe and get in the zone.</span>
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-4 lg:grid-cols-7">
-          {[
-            { label: "Deep Focus", icon: Brain, bg: "hover:border-blue-300 hover:bg-blue-50/50" },
-            { label: "Lo-fi", icon: Headphones, bg: "hover:border-purple-300 hover:bg-purple-50/50" },
-            { label: "Classical", icon: MusicNotes, bg: "hover:border-amber-300 hover:bg-amber-50/50" },
-            { label: "Ambient", icon: Leaf, bg: "hover:border-emerald-300 hover:bg-emerald-50/50" },
-            { label: "Rain Sounds", icon: CloudRain, bg: "hover:border-cyan-300 hover:bg-cyan-50/50" },
-            { label: "Instrumental", icon: Guitar, bg: "hover:border-rose-300 hover:bg-rose-50/50" },
-            { label: "Brain Boost", icon: Lightning, bg: "hover:border-yellow-300 hover:bg-yellow-50/50" },
-          ].map(({ label, icon: Icon, bg }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => {
-                setMood(label);
-                selectSource("Curated music");
-              }}
-              aria-pressed={mood === label}
-              className={cn(
-                "music-mood flex min-h-[48px] items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-bold transition-all cursor-pointer shadow-2xs",
-                mood === label
-                  ? "border-[#1068E9] bg-blue-50 text-[#1068E9] ring-2 ring-[#1068E9]/15"
-                  : `border-[var(--border-subtle)] bg-[var(--surface-card)] text-[var(--text-primary)] ${bg}`,
-              )}
-            >
-              <Icon size={18} weight="bold" />
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <div id="music-library" className="mt-6" />
-      <div className="music-source-grid grid gap-4 lg:grid-cols-3 items-start">
-        {/* Card 1: Upload your own music */}
-        <section
-          id="music-local"
-          className={cn(
-            "surface-card rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs flex flex-col justify-between transition-all",
-            tab === "Local files" && "ring-2 ring-[#1068E9]/20 border-[#1068E9]",
-          )}
-        >
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#1068E9]">
-                <UploadSimple size={22} weight="bold" />
-              </span>
-              <div>
-                <h2 className="font-display text-base font-extrabold text-[var(--text-primary)]">
-                  Upload your own music
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Add MP3, WAV, OGG, or other audio files.
-                </p>
-              </div>
-            </div>
-
-            {/* Dashed dropzone */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                if (e.dataTransfer.files) music.load(e.dataTransfer.files);
-              }}
-              className={cn(
-                "mt-4 flex flex-col items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed p-5 text-center transition-colors",
-                dragging
-                  ? "border-[#1068E9] bg-blue-50/50"
-                  : "border-[var(--border-subtle)] bg-[var(--surface-subtle)]",
-              )}
-            >
-              <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
-                <UploadSimple size={20} className="text-[var(--text-tertiary)] shrink-0" />
-                <span>Drag and drop audio files here</span>
-              </div>
-              <span className="text-[11px] font-bold text-[var(--text-tertiary)]">or</span>
-              <label className="relative inline-flex cursor-pointer items-center justify-center rounded-xl bg-[#1068E9] px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#0D57C5] transition-colors">
-                <span>Choose audio files</span>
-                <input
-                  aria-label="Choose audio files"
-                  type="file"
-                  accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac"
-                  multiple
-                  className="absolute inset-0 cursor-pointer opacity-0"
-                  onChange={(e) => {
-                    if (e.target.files) music.load(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-
+            <label className="music-volume">
+              <SpeakerHigh size={19} aria-hidden="true" />
+              <span className="sr-only">Volume level</span>
+              <input
+                aria-label="Volume level"
+                type="range"
+                min={0}
+                max={100}
+                value={music.volume}
+                onChange={(event) =>
+                  music.setVolume(Number(event.target.value))
+                }
+              />
+            </label>
             {music.error && (
-              <p role="alert" className="mt-3 text-xs font-bold text-[var(--danger)]">
+              <p role="alert" className="music-error">
                 {music.error}
               </p>
             )}
+          </div>
+        </section>
+        <section className="surface-card music-queue">
+          <div className="music-section-heading">
+            <h2>
+              <Playlist size={22} />
+              {hasMedia ? "Up next" : "Try a study stream"}
+            </h2>
+            {local && (
+              <button type="button" onClick={music.clear}>
+                Clear playlist
+              </button>
+            )}
+          </div>
+          <div className="music-queue-list">
+            {local
+              ? music.tracks
+                  .filter((_, index) => index !== music.index)
+                  .map((track) => (
+                    <button
+                      key={track.url}
+                      type="button"
+                      className="music-local-track"
+                      onClick={() => music.select(music.tracks.indexOf(track))}
+                    >
+                      <MusicNotes size={22} />
+                      <span>{track.name}</span>
+                      <Play size={18} />
+                    </button>
+                  ))
+              : nextTracks.map((track) => (
+                  <MusicTrackRow
+                    key={track.id}
+                    track={track}
+                    selected={active?.id === track.id}
+                    playing={music.playing}
+                    onPlay={playTrack}
+                  />
+                ))}
+            {local && music.tracks.length === 1 && (
+              <p className="notice">
+                Add another audio file to continue your playlist.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
 
-            {music.tracks.length > 0 && (
-              <div className="mt-3 max-h-36 overflow-y-auto space-y-1 divide-y divide-[var(--border-subtle)]">
-                {music.tracks.map((t, i) => (
+      <section className="music-moods" aria-label="Study moods">
+        <div className="music-section-heading">
+          <h2>
+            <Headphones size={22} />
+            Study moods
+          </h2>
+          <button
+            type="button"
+            aria-pressed={mood === "All"}
+            onClick={() => selectMood("All")}
+          >
+            All music
+          </button>
+        </div>
+        <div className="music-mood-grid">
+          {STUDY_MOODS.map((label, index) => {
+            const Icon = moodIcons[index];
+            return (
+              <button
+                key={label}
+                type="button"
+                className="music-mood"
+                aria-label={label}
+                aria-describedby={`music-mood-${index}-count`}
+                aria-pressed={mood === label}
+                onClick={() => selectMood(label)}
+              >
+                <Icon size={20} />
+                <span>
+                  {label}
+                  <small id={`music-mood-${index}-count`}>
+                    {tracksForMood(label).length} items
+                  </small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="music-source-grid">
+        <section id="music-curated" className="surface-card">
+          <div className="music-section-heading">
+            <h2>
+              <MusicNotes size={22} />
+              {mood === "All" ? "Curated study music" : mood}
+            </h2>
+            <span>{visibleTracks.length} items</span>
+          </div>
+          <label className="music-library-search">
+            <span className="sr-only">Search study music</span>
+            <input
+              className="field"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setShowAll(true);
+              }}
+              placeholder="Search tracks or creators"
+            />
+          </label>
+          <div className="music-media-grid">
+            {displayedTracks.map((track) => {
+              const selected = active?.id === track.id;
+              return (
+                <article
+                  key={track.id}
+                  className="music-media-card"
+                  data-active={selected}
+                >
                   <button
-                    key={t.url}
-                    aria-pressed={music.index === i && !music.externalTrack}
-                    onClick={() => music.select(i)}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-xl p-2 text-left text-xs transition-colors",
-                      music.index === i && !music.externalTrack
-                        ? "bg-blue-50 font-bold text-[#1068E9]"
-                        : "hover:bg-[var(--surface-subtle)]",
-                    )}
+                    type="button"
+                    className="music-media-play"
+                    aria-label={
+                      (selected && music.playing ? "Pause " : "Play ") +
+                      track.title
+                    }
+                    onClick={() => playTrack(track)}
                   >
-                    <span className="truncate">{t.name}</span>
-                    <span className="text-[10px] text-[var(--text-tertiary)] shrink-0">
-                      {music.index === i && !music.externalTrack ? "Playing" : "Play"}
+                    <MusicArtwork
+                      src={track.artwork}
+                      sizes="(max-width: 767px) 45vw, (max-width: 1279px) 26vw, 280px"
+                    />
+                    <span className="music-media-copy">
+                      <strong>{track.title}</strong>
+                      <small>{track.creator}</small>
+                      <span>
+                        {trackDuration(track)} ·{" "}
+                        {track.source === "radio" ? "Audio only" : "YouTube"}
+                      </span>
+                    </span>
+                    <span className="music-media-action">
+                      {selected && music.playing ? (
+                        <Pause weight="fill" size={20} />
+                      ) : (
+                        <Play weight="fill" size={20} />
+                      )}
                     </span>
                   </button>
-                ))}
-              </div>
-            )}
+                  <a
+                    href={track.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="music-media-source"
+                  >
+                    <ArrowSquareOut size={15} />
+                    Publisher
+                  </a>
+                </article>
+              );
+            })}
           </div>
-
-          <p className="mt-4 text-[11px] text-[var(--text-tertiary)]">
-            Files stay on your device and are never uploaded. Playback persists via the docked study player.
+          {visibleTracks.length === 0 && (
+            <p className="notice">
+              No matching music. Try another title or creator.
+            </p>
+          )}
+          {visibleTracks.length > 6 && (
+            <button
+              type="button"
+              className="music-show-all"
+              aria-expanded={showAll}
+              onClick={() => setShowAll(!showAll)}
+            >
+              {showAll
+                ? "Show fewer items"
+                : "View all " + visibleTracks.length + " items"}
+            </button>
+          )}
+          <p className="music-library-note">
+            Native audio streams keep playing while you study. YouTube keeps a
+            small video view; minimizing pauses it.
           </p>
         </section>
-
-        {/* Card 2: Extract audio from YouTube */}
         <section
-          id="music-youtube"
-          className={cn(
-            "surface-card rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs flex flex-col justify-between transition-all",
-            tab === "YouTube audio" && "ring-2 ring-[#1068E9]/20 border-[#1068E9]",
-          )}
+          id="music-local"
+          className={cn("surface-card", dragging && "music-drop-active")}
         >
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
-                <YoutubeLogo size={22} weight="fill" />
-              </span>
-              <div>
-                <h2 className="font-display text-base font-extrabold text-[var(--text-primary)]">
-                  Extract audio from YouTube
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Paste a YouTube link to extract and play the audio.
-                </p>
-              </div>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const parsed = youtubeEmbed(url);
-                if (!parsed) {
-                  setError("Enter a valid HTTPS YouTube video or playlist URL.");
-                  return;
-                }
-                music.playExternalTrack({
-                  title: "Custom YouTube Stream",
-                  category: "YouTube",
-                  embedUrl: parsed.src,
-                  watchUrl: parsed.watch,
-                });
-                setError("");
-              }}
-              className="mt-4 flex flex-col gap-2"
-            >
-              <div className="flex items-center gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-1.5 focus-within:border-[#1068E9] focus-within:ring-2 focus-within:ring-[#1068E9]/15">
-                <LinkSimple size={18} className="ml-2 text-[var(--text-tertiary)] shrink-0" />
-                <input
-                  type="url"
-                  className="w-full bg-transparent px-2 py-1 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  aria-label="YouTube video URL"
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!url.trim()}
-                  className="shrink-0 rounded-xl bg-[#1068E9] text-xs font-bold text-white hover:bg-[#0D57C5]"
-                >
-                  <span>Extract audio</span>
-                  <span>&rarr;</span>
-                </Button>
-              </div>
-
-              {error && (
-                <p role="alert" className="mt-1 text-xs font-bold text-[var(--danger)]">
-                  {error}
-                </p>
-              )}
-            </form>
+          <div className="music-section-heading">
+            <h2>
+              <UploadSimple size={22} />
+              Your own audio
+            </h2>
           </div>
-
-          <div className="mt-4">
-            <div className="flex items-center gap-2 rounded-xl bg-blue-50/60 p-2 text-[11px] text-[#1068E9]">
-              <Info size={16} weight="bold" className="shrink-0" />
-              <span>Audio-only. No video playback. Perfect for background study.</span>
-            </div>
-            <p className="mt-2 text-[10px] text-[var(--text-tertiary)]">
-              Continuous background playback docks at the bottom of your workspace. YouTube platform terms apply.
-            </p>
-          </div>
-        </section>
-
-        {/* Card 3: Curated playlists */}
-        <section
-          id="music-curated"
-          className={cn(
-            "surface-card rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs flex flex-col justify-between transition-all",
-            tab === "Curated music" && "ring-2 ring-[#1068E9]/20 border-[#1068E9]",
-          )}
-        >
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-purple-50 text-purple-600">
-                  <Sparkle size={22} weight="bold" />
-                </span>
-                <h2 className="font-display text-base font-extrabold text-[var(--text-primary)]">
-                  Curated playlists
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAllCurated((v) => !v);
+          <p>Add MP3, WAV, OGG, or other audio files.</p>
+          <div
+            className="music-dropzone"
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              music.load(event.dataTransfer.files);
+            }}
+          >
+            <UploadSimple size={30} />
+            <p>Drop audio files here</p>
+            <label className="music-file-button">
+              Choose audio files
+              <input
+                aria-label="Choose audio files"
+                type="file"
+                accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac"
+                multiple
+                onChange={(event) => {
+                  if (event.target.files) music.load(event.target.files);
+                  event.target.value = "";
                 }}
-                className="text-xs font-bold text-[#1068E9] hover:underline cursor-pointer"
-              >
-                {showAllCurated ? "Hide all" : "View all"}
-              </button>
-            </div>
-
-            {/* 3 Playlist Cards with thumbnails */}
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {[
-                {
-                  title: "Focus Flow",
-                  desc: "Stay in the zone",
-                  img: "/assets/illustrations/playlist-focus-flow.png",
-                  track: CURATED_TRACKS[2] ?? CURATED_TRACKS[0],
-                },
-                {
-                  title: "Calm Coding",
-                  desc: "For deep work",
-                  img: "/assets/illustrations/playlist-calm-coding.png",
-                  track: CURATED_TRACKS[1],
-                },
-                {
-                  title: "Study Cafe",
-                  desc: "Chill beats & coffee",
-                  img: "/assets/illustrations/playlist-study-cafe.png",
-                  track: CURATED_TRACKS[0],
-                },
-              ].map((item, idx) => {
-                const isSelected = item.track && music.externalTrack?.id === item.track.id;
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => item.track && toggleCuratedTrack(item.track)}
-                    className="group relative cursor-pointer overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] transition-all hover:shadow-md hover:scale-[1.02]"
-                  >
-                    <div className="relative aspect-4/3 w-full overflow-hidden">
-                      <Image
-                        src={item.img}
-                        alt={item.title}
-                        fill
-                        sizes="(max-width: 768px) 100px, 140px"
-                        className="object-cover transition-transform group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                      <div className="absolute bottom-1.5 left-2 right-8">
-                        <span className="block truncate text-[11px] font-extrabold text-white leading-tight">
-                          {item.title}
-                        </span>
-                        <span className="block truncate text-[9px] text-white/80">
-                          {item.desc}
-                        </span>
-                      </div>
-                      <div className="absolute bottom-1.5 right-1.5 flex size-6 items-center justify-center rounded-full bg-white text-[#1068E9] shadow-xs">
-                        {isSelected ? <Stop size={12} weight="fill" /> : <Play size={12} weight="fill" className="ml-0.5" />}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {showAllCurated && (
-              <div className="mt-3 space-y-2 border-t border-[var(--border-subtle)] pt-3 max-h-40 overflow-y-auto">
-                {visibleTracks.map((track) => {
-                  const isSelected = music.externalTrack?.id === track.id;
-                  return (
-                    <div
-                      key={track.id}
-                      className={cn(
-                        "flex items-center justify-between gap-2 rounded-xl p-2 text-xs transition-colors",
-                        isSelected ? "bg-blue-50 text-[#1068E9] font-bold" : "hover:bg-[var(--surface-subtle)]",
-                      )}
-                    >
-                      <span className="truncate">{track.title}</span>
-                      <Button
-                        size="sm"
-                        variant={isSelected ? "primary" : "secondary"}
-                        className="h-7 px-2.5 text-[11px]"
-                        onClick={() => toggleCuratedTrack(track)}
-                      >
-                        {isSelected ? "Stop" : "Play"}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+              />
+            </label>
           </div>
-
-          <p className="mt-4 text-[11px] text-[var(--text-tertiary)]">
-            Official public study streams. Audio continues seamlessly as you study across FETCH.
+          {music.tracks.length > 0 && (
+            <div className="music-local-list">
+              {music.tracks.map((track, index) => (
+                <button
+                  type="button"
+                  key={track.url}
+                  aria-pressed={!active && index === music.index}
+                  onClick={() => music.select(index)}
+                >
+                  <MusicNotes size={20} />
+                  <span>{track.name}</span>
+                  <Play size={18} />
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="music-library-note">
+            Files stay on your device and are never uploaded.
+          </p>
+        </section>
+        <section id="music-youtube" className="surface-card">
+          <div className="music-section-heading">
+            <h2>
+              <YoutubeLogo size={22} />
+              YouTube study stream
+            </h2>
+          </div>
+          <p>Play a video or playlist from its original source.</p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const parsed = youtubeEmbed(url);
+              if (!parsed) {
+                setError("Enter a valid HTTPS YouTube video or playlist URL.");
+                return;
+              }
+              const videoId = new URL(parsed.watch).searchParams.get("v");
+              music.playExternalTrack({
+                title: "Your YouTube stream",
+                category: "YouTube",
+                embedUrl: parsed.src,
+                watchUrl: parsed.watch,
+                artwork: videoId
+                  ? "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg"
+                  : undefined,
+              });
+              setError("");
+            }}
+          >
+            <label className="field-label">
+              YouTube link
+              <input
+                aria-label="YouTube video URL"
+                className="field"
+                type="url"
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+            </label>
+            <Button type="submit" disabled={!url.trim()}>
+              <Play weight="fill" /> Play stream
+            </Button>
+            {error && (
+              <p role="alert" className="music-error">
+                {error}
+              </p>
+            )}
+          </form>
+          <p className="music-library-note">
+            Move the small player using its handle. Minimize to pause; expand to
+            resume.
           </p>
         </section>
       </div>
