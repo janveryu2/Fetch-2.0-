@@ -209,7 +209,8 @@ export default function FriendsPage() {
   }
 
   async function copy() {
-    const username = userProfile?.username ? `@${userProfile.username}` : "@fetch_student";
+    if (!userProfile?.username) return;
+    const username = `@${userProfile.username}`;
     try {
       await navigator.clipboard.writeText(username);
       setStatus(`Username copied: ${username}`);
@@ -218,8 +219,18 @@ export default function FriendsPage() {
     }
   }
 
+  async function shareProfile() {
+    if (!userProfile?.username) return;
+    const url = `${window.location.origin}/app/u/${encodeURIComponent(userProfile.username)}`;
+    try {
+      if (navigator.share) await navigator.share({ title: "My FETCH profile", url });
+      else { await navigator.clipboard.writeText(url); setStatus("Profile link copied."); }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError")) setStatus("Could not share your profile. Try copying your username.");
+    }
+  }
   return (
-    <div className="workspace">
+    <div className="workspace friends-page">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="page-title">Better with study buddies.</h1>
@@ -448,6 +459,7 @@ export default function FriendsPage() {
                       variant="quiet"
                       onClick={() => removeFriend(friend.id)}
                       title="Remove friend"
+                      aria-label={`Remove ${friend.displayName} from friends`}
                       className="text-red-600 hover:bg-red-50 hover:text-red-700"
                     >
                       <UserMinus size={18} />
@@ -506,7 +518,7 @@ export default function FriendsPage() {
               Your global username
             </h2>
             <p className="mt-3 select-all break-all font-display text-2xl font-semibold text-[var(--fetch-blue-700)]">
-              {userProfile?.username ? `@${userProfile.username}` : "@fetch_student"}
+              {userProfile?.username ? `@${userProfile.username}` : "Choose a username in Settings"}
             </p>
             <p className="mt-1 text-xs text-[var(--text-tertiary)]">
               {mode === "account"
@@ -515,13 +527,15 @@ export default function FriendsPage() {
             </p>
             <button
               onClick={copy}
+              disabled={!userProfile?.username}
               className="mt-4 flex min-h-11 cursor-pointer items-center gap-2 text-sm font-extrabold text-[var(--fetch-blue-700)]"
             >
               <Copy />
               Copy username
             </button>
             <button
-              disabled={mode !== "account"}
+              disabled={mode !== "account" || !userProfile?.username}
+              onClick={() => void shareProfile()}
               title={mode === "account" ? "Share your profile" : "Profile links require a connected account"}
               className={`mt-1 flex min-h-11 items-center gap-2 text-sm font-extrabold ${
                 mode === "account"
@@ -534,8 +548,9 @@ export default function FriendsPage() {
             </button>
           </section>
 
-          <section className="surface-card p-5">
+          <section className="surface-card friends-circle p-5">
             <h2 className="font-display text-xl font-semibold">Your study circle</h2>
+            {!!friends.length && <div className="friends-circle-avatars">{friends.slice(0, 4).map(friend => <UserAvatar key={friend.id} src={friend.avatarUrl} alt={friend.displayName} size={36} className="size-9 rounded-full" />)}{friends.length > 4 && <span>+{friends.length - 4}</span>}</div>}
             <p className="mt-3 text-sm text-[var(--text-secondary)]">
               {friends.length === 1
                 ? "You have 1 study buddy."

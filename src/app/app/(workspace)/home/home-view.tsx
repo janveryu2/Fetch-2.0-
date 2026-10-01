@@ -37,6 +37,20 @@ export function HomeView({ displayName, initialAuthSignal }: HomeViewProps) {
       initialAuthSignal === "username-taken",
   );
   const [search, setSearch] = useState("");
+  const [materialOpen, setMaterialOpen] = useState(false);
+  useEffect(() => {
+    if (!materialOpen || window.location.hash !== "#add-material") return;
+    const frame = requestAnimationFrame(() => document.getElementById("add-material")?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, [materialOpen]);
+  useEffect(() => {
+    const reveal = () => {
+      if (window.location.hash === "#add-material") setMaterialOpen(true);
+    };
+    const frame = requestAnimationFrame(reveal);
+    window.addEventListener("hashchange", reveal);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("hashchange", reveal); };
+  }, []);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -153,7 +167,7 @@ export function HomeView({ displayName, initialAuthSignal }: HomeViewProps) {
       >
         <div className="home-topbar">
           <h1 className="page-title">
-            {timeGreeting},<span>{greetingName}! 👋</span>
+            {timeGreeting},<span>{greetingName}!</span>
           </h1>
           <p className="page-description">
             Let’s turn your notes into progress.
@@ -208,6 +222,9 @@ export function HomeView({ displayName, initialAuthSignal }: HomeViewProps) {
             </p>
           )}
           <div className="home-intro-actions">
+            <Button asChild className="home-mobile-create">
+              <Link href="#add-material" onClick={() => setMaterialOpen(true)}>Create a StudyPack <ArrowRight size={18} /></Link>
+            </Button>
             <Button asChild>
               <Link
                 href={
@@ -295,8 +312,11 @@ export function HomeView({ displayName, initialAuthSignal }: HomeViewProps) {
               </div>
             </section>
           </div>
-          <div className="home-create-panel min-w-0">
-            <CreatePackPanel />
+          <div className="home-create-panel min-w-0" data-expanded={materialOpen}>
+            <button type="button" className="home-material-toggle" aria-expanded={materialOpen} aria-controls="home-material-form" onClick={() => setMaterialOpen(!materialOpen)}>
+              <Stack size={22} /> {materialOpen ? "Close material editor" : "Add study material"}<CaretRight size={18} />
+            </button>
+            <div id="home-material-form"><CreatePackPanel /></div>
           </div>
         </div>
         <aside className="home-approved-aside">

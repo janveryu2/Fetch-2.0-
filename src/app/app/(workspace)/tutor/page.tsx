@@ -52,6 +52,10 @@ export default function TutorPage() {
   const [error, setError] = useState("");
   const [focusMode, setFocusMode] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { if (window.matchMedia("(max-width: 767px)").matches) setShowControls(false); });
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const input = useRef<HTMLTextAreaElement>(null);
 
   const isTutorUsable = mode === "account" && tutorAvailable;
@@ -259,7 +263,7 @@ export default function TutorPage() {
         : "Setup needed";
 
   return (
-    <div className="workspace !max-w-[1000px]">
+    <div className="workspace tutor-page !max-w-[1000px]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="page-title">FETCH AI Tutor</h1>
         <div className="flex items-center gap-2">
@@ -300,9 +304,9 @@ export default function TutorPage() {
         </div>
       )}
 
-      <section className="surface-card mt-6 overflow-hidden">
+      <section className="surface-card tutor-chat mt-6 overflow-hidden" data-has-messages={!!messages.length || loading}>
         {!messages.length && (
-          <div className="px-4 py-6 text-center sm:px-10 sm:py-8">
+          <div className="tutor-welcome px-4 py-6 text-center sm:px-10 sm:py-8">
             <Image
               src="/assets/mascot/fetch-wave.png"
               alt="FETCH, your learning companion"
@@ -339,7 +343,7 @@ export default function TutorPage() {
                 </button>
               </div>
             )}
-            <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+            <div className="tutor-suggestions mt-6 grid gap-2.5 sm:grid-cols-2">
               {suggestions.map(({ label, prompt, icon: Icon }) => (
                 <button
                   key={label}
@@ -361,7 +365,7 @@ export default function TutorPage() {
           <div
             aria-live="polite"
             className={cn(
-              "space-y-4 overflow-y-auto p-4 sm:p-7 transition-all duration-200",
+              "tutor-messages space-y-4 overflow-y-auto p-4 sm:p-7 transition-all duration-200",
               focusMode ? "max-h-[75dvh]" : "max-h-[55dvh]"
             )}
           >
@@ -412,14 +416,14 @@ export default function TutorPage() {
           </div>
         )}
 
-        <div className="border-t border-[var(--border-subtle)] p-4 sm:p-5">
+        <div className="tutor-composer border-t border-[var(--border-subtle)] p-4 sm:p-5">
           {/* Collapsible secondary controls header */}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => setShowControls((prev) => !prev)}
               aria-expanded={showControls}
-              className="flex items-center gap-1.5 text-xs font-bold text-[var(--fetch-blue-700)] hover:underline cursor-pointer"
+              className="tutor-context-toggle flex items-center gap-1.5 text-xs font-bold text-[var(--fetch-blue-700)] hover:underline cursor-pointer"
             >
               {showControls ? <CaretUp size={14} /> : <CaretDown size={14} />}
               <span>

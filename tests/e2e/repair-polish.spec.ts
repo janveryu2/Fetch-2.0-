@@ -57,7 +57,8 @@ test("Month date cells, keyboard date buttons, event editing and all calendar vi
   const day = await page.locator(".calendar-month-cell [aria-current='date']").getAttribute("aria-label");
   const date = day!.replace("Add event on ", "");
   const cell = page.locator(`.calendar-month-cell[data-date='${date}']`);
-  await cell.click({ position: { x: 10, y: 95 } });
+  const cellBounds = await cell.boundingBox();
+  await cell.click({ position: { x: 10, y: cellBounds!.height - 8 } });
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByLabel("Title", { exact: true }).fill("Month interaction verification");
   await page.getByLabel("All day", { exact: true }).check();
@@ -117,6 +118,8 @@ test("real host and guest can create, join, start, answer, complete and leave Li
   try {
     const host = await account("host");
     const guest = await account("guest");
+    await host.setViewportSize({ width: 390, height: 844 });
+    await guest.setViewportSize({ width: 390, height: 844 });
     // Substitute only the AI job boundary. The resulting pack, artifact, cards,
     // authentication, workspace synchronization and client navigation are real.
     const deckResponse = await host.request.post("/api/flashcards/deck", { data: { title: "Fresh browser flashcards", cards: [{ front: "Cell nucleus", back: "Stores genetic instructions", aliases: [] }] } });
@@ -132,7 +135,7 @@ test("real host and guest can create, join, start, answer, complete and leave Li
     const jobId = randomUUID();
     await host.route("**/api/generate/job", route => route.fulfill({ json: { jobId, stage: "queued", status: "queued" } }));
     await host.route(`**/api/generate/job/${jobId}`, route => route.fulfill({ json: { jobId, status: "completed", stage: "completed", packId: deckPackId, acceptedCount: 1, requestedCount: 1, artifactKind: "flashcards" } }));
-    await host.goto("/app/home");
+    await host.goto("/app/home#add-material");
     await host.getByRole("radio", { name: /Flashcards/ }).click();
     await host.getByLabel(/Paste your study material/).fill("The nucleus holds genetic instructions for the cell. Mitochondria produce energy and chloroplasts perform photosynthesis in plants.");
     await host.getByRole("button", { name: "Generate Flashcards", exact: true }).click();
@@ -140,6 +143,23 @@ test("real host and guest can create, join, start, answer, complete and leave Li
     await expect(host.getByRole("heading", { name: "Fresh browser flashcards" })).toBeVisible();
     await expect(host.getByText("Cell nucleus", { exact: true })).toBeVisible();
     await host.unroute("**/api/workspace*");
+    await host.goto("/app/study-packs");
+    await host.getByRole("button", { name: "Flashcards", exact: true }).click();
+    await expect(host.locator(".study-pack-card")).toHaveCount(1);
+    await expect(host.locator(".study-pack-card")).toContainText("Fresh browser flashcards");
+    await expect(host.locator(".study-pack-card").getByRole("link", { name: "Study Quiz" })).toHaveCount(0);
+
+    const sent = await host.request.post("/api/friends/requests", { data: { recipientId: users[1] } });
+    expect(sent.status()).toBe(201);
+    await guest.goto("/app/friends");
+    await guest.getByRole("button", { name: "Accept", exact: true }).click();
+    await expect(guest.getByRole("heading", { name: "Your friends (1)" })).toBeVisible();
+    await expect(guest.locator(".friends-circle")).toContainText("You have 1 study buddy.");
+    await guest.screenshot({ path: "test-results/mobile-review/friends-real-account-390.png", fullPage: true });
+    await host.goto("/app/tutor");
+    await expect(host.getByLabel("Your question")).toBeVisible();
+    await expect(host.getByRole("button", { name: "Show StudyPack context & past conversations" })).toBeVisible();
+    await host.screenshot({ path: "test-results/mobile-review/tutor-real-account-390.png", fullPage: true });
     const source = "The nucleus stores genetic instructions. Mitochondria provide energy. Chloroplasts carry out photosynthesis in plant cells.";
     const fixture = await admin.rpc("create_study_pack", { p_title: "Isolated browser Live verification", p_source_type: "text", p_source_label: "Verification", p_source_content: source, p_content_hash: createHash("sha256").update(source).digest("hex"), p_owner_id: users[0], p_questions: ["Nucleus", "Mitochondria", "Chloroplasts"].map(answer => ({ kind: "multiple_choice", prompt: `Choose ${answer}`, choices: [answer, "Other"], answer, explanation: "Verification", sourceQuote: source })) });
     if (fixture.error) throw fixture.error;
@@ -157,6 +177,7 @@ test("real host and guest can create, join, start, answer, complete and leave Li
     await expect(host.getByRole("heading", { name: "Waiting for players..." })).toBeVisible();
     await guest.goto("/app/live");
     await expect(guest.locator(".live-room-list li").filter({ hasText: "Isolated browser Live verification" })).toHaveCount(0);
+    await guest.getByRole("button", { name: "Join a room", exact: true }).click();
     await guest.getByLabel("Room code", { exact: true }).fill(room.joinCode);
     await guest.getByRole("button", { name: "Join Room", exact: true }).click();
     await expect(guest.getByRole("heading", { name: "Waiting for players..." })).toBeVisible();

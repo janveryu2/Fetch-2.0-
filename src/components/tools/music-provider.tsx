@@ -26,6 +26,13 @@ interface MusicContextType {
   select: (index: number) => void;
   load: (files: FileList) => void;
   pause: () => void;
+  playing: boolean;
+  togglePlayback: () => void;
+  volume: number;
+  setVolume: (volume: number) => void;
+  currentTime: number;
+  duration: number;
+  seek: (time: number) => void;
   clear: () => void;
 }
 
@@ -35,6 +42,10 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState("");
+  const [playing, setPlaying] = useState(false);
+  const [volume, updateVolume] = useState(80);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [externalActive, setExternalActive] = useState(false);
   const [externalTrack, setExternalTrack] = useState<ExternalTrack | null>(null);
   const urls = useRef<string[]>([]);
@@ -116,16 +127,30 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
         load,
         select,
         pause: () => audio.current?.pause(),
+        playing,
+        togglePlayback: () => {
+          if (!audio.current) return;
+          if (!audio.current.paused) audio.current.pause();
+          else void audio.current.play().catch(() => setError("Playback could not start. Try the audio controls below."));
+        },
+        volume,
+        setVolume: value => {
+          updateVolume(value);
+          if (audio.current) audio.current.volume = value / 100;
+        },
+        currentTime,
+        duration,
+        seek: time => { if (audio.current) audio.current.currentTime = time; },
         clear,
       }}
     >
-      <div className={tracks.length || externalTrack ? "pb-48" : undefined}>{children}</div>
+      <div className={externalTrack ? "music-workspace-with-stream pb-48" : tracks.length ? "pb-48" : undefined}>{children}</div>
 
       {/* Local files player dock */}
       {tracks[index] && (
         <section
           aria-label="Now playing"
-          className="fixed bottom-20 left-3 right-3 z-40 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-soft)] lg:bottom-4 lg:left-[280px] lg:right-8"
+          className="music-local-dock fixed bottom-20 left-3 right-3 z-40 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-soft)] lg:bottom-4 lg:left-[280px] lg:right-8"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -166,9 +191,18 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
             </button>
             <audio
               onPlay={() => {
+                setPlaying(true);
                 setExternalActive(false);
                 setExternalTrack(null);
               }}
+              onPause={() => setPlaying(false)}
+              onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime)}
+              onVolumeChange={event => updateVolume(Math.round(event.currentTarget.volume * 100))}
+              onLoadedMetadata={event => {
+                setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
+                event.currentTarget.volume = volume / 100;
+              }}
+              onEmptied={() => { setCurrentTime(0); setDuration(0); setPlaying(false); }}
               ref={audio}
               src={tracks[index].url}
               controls
@@ -201,7 +235,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       {externalTrack && (
         <section
           aria-label="Study stream player"
-          className="fixed bottom-20 right-3 z-40 max-w-[calc(100vw-24px)] rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-3 shadow-2xl backdrop-blur-md transition-all lg:bottom-6 lg:right-6 sm:w-[380px]"
+          className="music-stream-dock fixed bottom-20 right-3 z-40 max-w-[calc(100vw-24px)] rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-card)] p-3 shadow-2xl backdrop-blur-md transition-all lg:bottom-6 lg:right-6 sm:w-[380px]"
         >
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
@@ -222,7 +256,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
               {pathname !== "/app/music" && (
                 <Link
                   href="/app/music"
-                  className="flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
+                  className="flex size-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
                   title="Open Music Studio"
                   aria-label="Open Music Studio"
                 >
@@ -234,7 +268,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
                   href={externalTrack.watchUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
+                  className="flex size-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
                   title="Open directly on YouTube"
                   aria-label="Open on YouTube"
                 >
@@ -245,7 +279,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={stopExternalTrack}
                 aria-label="Stop study stream"
-                className="flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-red-600"
+                className="flex size-11 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-red-600"
               >
                 <X size={18} />
               </button>

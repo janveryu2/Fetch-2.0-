@@ -314,8 +314,9 @@ export default function LivePage() {
     }
   }
 
+  const [mobileAction, setMobileAction] = useState("create");
   return (
-    <div className="workspace workspace--wide live-refresh">
+    <div className="workspace workspace--wide live-refresh" data-action={mobileAction}>
       <header className="live-hero">
         <div className="live-hero-copy">
           <h1 className="page-title">Study together.<br /><span>Challenge each other.</span></h1>
@@ -572,8 +573,13 @@ export default function LivePage() {
           )}
         </div>
       ) : (
+        <>
+        <div className="live-mobile-actions segment" aria-label="Room action">
+          <button type="button" aria-pressed={mobileAction === "create"} onClick={() => setMobileAction("create")}>Create a room</button>
+          <button type="button" aria-pressed={mobileAction === "join"} onClick={() => setMobileAction("join")}>Join a room</button>
+        </div>
         <div className="live-actions">
-          <section className="surface-card live-panel">
+          <section className="surface-card live-panel live-create-panel">
             <div className="live-panel-heading"><span className="live-icon"><RocketLaunch size={28} /></span><div><h2>Create a room</h2><p>Select a StudyPack and set up your live study session.</p></div></div>
             <label className="field-label live-pack-label">Select StudyPack
               <select className="field mt-2" value={selectedPackId} onChange={e => setChosenPackId(e.target.value)} disabled={mode !== "account" || !eligiblePacks.length}>
@@ -597,7 +603,7 @@ export default function LivePage() {
             </div>
             <Button onClick={handleCreateRoom} disabled={mode !== "account" || loading || !!activeRoomId || !selectedPackId} className="live-create-button"><RocketLaunch />{loading ? "Connecting…" : "Create Live Room"}</Button>
           </section>
-          <section className="surface-card live-panel">
+          <section className="surface-card live-panel live-join-panel">
             <div className="live-panel-heading"><span className="live-icon"><UsersThree size={28} /></span><div><h2>Join a room</h2><p>Enter the 6-character code provided by your study buddy.</p></div></div>
             <form onSubmit={handleJoinRoom} className="live-join-form">
               <label className="field-label">Room code<input className="field live-code" value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))} maxLength={6} placeholder="ABC123" autoCapitalize="characters" autoComplete="off" spellCheck={false} /></label>
@@ -606,6 +612,7 @@ export default function LivePage() {
             <p className="live-help">Public rooms appear below. Private rooms are available to invited players with the room code.</p>
           </section>
         </div>
+        </>
       )}
 
       {status && (

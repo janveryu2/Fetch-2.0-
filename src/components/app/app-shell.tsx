@@ -26,6 +26,7 @@ import { resolveStudyDestination } from "@/lib/study-destination";
 import { getActiveDraftSnapshot } from "@/lib/study-session-draft";
 import { cn } from "@/lib/cn";
 import { ActiveGenerationIndicator } from "@/components/study/active-generation-indicator";
+import { useMobileKeyboard } from "@/components/app/use-mobile-keyboard";
 
 function subscribeToStorage(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -98,7 +99,14 @@ function NavArtwork({ name, size = 36 }: { name: string; size?: number }) {
   );
 }
 export function AppShell({ children }: { children: React.ReactNode }) {
+  useMobileKeyboard();
   const pathname = usePathname();
+  const contextualItem = groups.flatMap(group => group.items).find(item =>
+    ["/app/tutor", "/app/music", "/app/friends", "/app/live", "/app/calendar", "/app/messages"].includes(item.href) && pathname.startsWith(item.href)
+  ) ?? groups[1].items[2];
+  const mobileItems = [groups[0].items[0], groups[0].items[1], groups[1].items[1], contextualItem];
+  const isActive = (href: string) => pathname.startsWith(href) ||
+    (href === "/app/study-packs" && (pathname.startsWith("/app/study/") || pathname.startsWith("/app/study-flashcards/")));
   const router = useRouter();
   const { packs, attempts, mode, userId, status, syncError, storageWarning, retryLoad } = useDemo();
   const scopeId = mode === "account" && userId ? userId : "demo";
@@ -297,7 +305,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-[100dvh] lg:pl-[270px]">
+    <div className="fetch-app-shell min-h-[100dvh] lg:pl-[270px]">
       <a href="#app-main" className="skip-link">
         Skip to workspace
       </a>
@@ -362,7 +370,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Account Card at bottom */}
         {accountCardContent}
       </aside>
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 lg:hidden">
+      <header className="fetch-mobile-header sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 lg:hidden">
         <FetchBrand />
         <span className="text-xs font-bold text-[var(--text-secondary)]">
           {mode === "account" ? "Account" : "Local demo"}
@@ -388,21 +396,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--surface-card)] px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
+        className="fetch-mobile-nav fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-[var(--border-subtle)] bg-[var(--surface-card)] px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       >
-        {groups[0].items.map(({ href, label, icon: Icon }) => (
+        {mobileItems.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
-            aria-current={pathname === href ? "page" : undefined}
+            aria-current={isActive(href) ? "page" : undefined}
             className={cn(
               "flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-extrabold",
-              pathname === href &&
+              isActive(href) &&
                 "bg-[var(--fetch-blue-100)] text-[var(--fetch-blue-800)]",
             )}
           >
-            <Icon size={22} />
-            {label}
+            <Icon size={22} weight={isActive(href) ? "fill" : "regular"} />
+            {label === "Pomodoro Timer" ? "Pomodoro" : label === "Music Studio" ? "Music" : label === "FETCH AI Tutor" ? "Tutor" : label}
           </Link>
         ))}
         <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -412,7 +420,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/40" />
-            <Dialog.Content className="fixed inset-y-0 right-0 z-[70] w-[min(340px,90vw)] overflow-y-auto bg-[var(--surface-card)] p-5">
+            <Dialog.Content className="fetch-more-sheet fixed z-[70] overflow-y-auto bg-[var(--surface-card)] p-5">
               <div className="flex items-center justify-between">
                 <Dialog.Title className="font-display text-2xl font-semibold">
                   Your workspace
@@ -427,10 +435,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Dialog.Description className="text-sm text-[var(--text-secondary)]">
                 Study tools, community, and settings.
               </Dialog.Description>
-              <nav aria-label="All destinations">
-                {navigation}
-                <div className="mt-5">{accountCardContent}</div>
+              <nav aria-label="All destinations" className="fetch-more-grid">
+                {groups.flatMap(group => group.items).map(({ href, label, icon: Icon }) => (
+                  <Link key={href} href={href} onClick={() => setOpen(false)} aria-current={isActive(href) ? "page" : undefined}>
+                    <Icon size={23} />{label}
+                  </Link>
+                ))}
               </nav>
+              <div className="fetch-more-account mt-4">{accountCardContent}</div>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>

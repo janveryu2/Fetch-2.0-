@@ -125,6 +125,7 @@ export default function PomodoroPage() {
 
   const goalSessions = 6;
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
   return (
     <div className="workspace workspace--wide pomodoro-refresh">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -150,11 +151,11 @@ export default function PomodoroPage() {
       </header>
 
       {/* Main Grid: Stage (left) + Settings (right) */}
-      <div className="mt-5 grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="pomodoro-layout mt-5 grid items-stretch gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left: Pomodoro Stage */}
         <section className="surface-card pomodoro-stage relative flex flex-col items-center justify-between overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-6 sm:p-8 text-center shadow-xs backdrop-blur-xs min-h-[500px]">
           {/* Mode Pill Selector */}
-          <div className="relative z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] p-1.5 shadow-sm">
+          <div className="pomodoro-modes relative z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] p-1.5 shadow-sm">
             {(
               [
                 { mode: "Focus", label: "Focus", icon: Target },
@@ -185,7 +186,7 @@ export default function PomodoroPage() {
           </div>
 
           {/* Circular SVG Timer Dial */}
-          <div className="relative z-10 my-6 flex items-center justify-center">
+          <div className="pomodoro-dial relative z-10 my-6 flex items-center justify-center">
             <svg
               className="size-64 sm:size-72 -rotate-90 transform"
               viewBox="0 0 260 260"
@@ -312,8 +313,9 @@ export default function PomodoroPage() {
         </section>
 
         {/* Right: Timer Settings */}
-        <aside className="space-y-4">
-          <section className="surface-card rounded-3xl border border-[var(--border-subtle)] p-6 shadow-xs flex flex-col justify-between">
+        <aside className="pomodoro-settings space-y-4" data-expanded={settingsOpen}>
+          <button className="pomodoro-settings-toggle" type="button" aria-expanded={settingsOpen} aria-controls="pomodoro-settings-panel" onClick={() => setSettingsOpen(!settingsOpen)}><Gear size={22} /> Timer settings <CaretRight size={18} /></button>
+          <section id="pomodoro-settings-panel" className="surface-card rounded-3xl border border-[var(--border-subtle)] p-6 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
                 <h2 className="font-display flex items-center gap-2 text-base font-extrabold text-[var(--text-primary)]">
@@ -589,7 +591,7 @@ export default function PomodoroPage() {
       </div>
 
       {/* Bottom 4 Status Cards */}
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="pomodoro-stats mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Today's Focus Goal */}
         <div className="surface-card relative flex flex-col justify-between rounded-3xl border border-[var(--border-subtle)] p-5 shadow-xs">
           <div className="flex items-center justify-between">
@@ -603,7 +605,7 @@ export default function PomodoroPage() {
               Today&apos;s Focus Goal
             </span>
             <h3 className="font-display text-xl font-extrabold text-[var(--text-primary)]">
-              {completedTodayCount} / {goalSessions} sessions
+              {completedTodayCount} / {goalSessions}<span className="pomodoro-count-unit"> sessions</span>
             </h3>
             <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
               <div
@@ -650,7 +652,7 @@ export default function PomodoroPage() {
             </span>
             <h3 className="font-display text-xl font-extrabold text-[var(--text-primary)]">
               {completedTodayCount}{" "}
-              {completedTodayCount === 1 ? "session" : "sessions"}
+              <span className="pomodoro-count-unit">{completedTodayCount === 1 ? "session" : "sessions"}</span>
             </h3>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
               {completedTodayCount > 0

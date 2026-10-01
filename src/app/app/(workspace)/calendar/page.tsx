@@ -310,7 +310,7 @@ export default function CalendarPage() {
     </button>
   );
   return (
-    <div className="workspace !max-w-[1600px]">
+    <div className="workspace calendar-page !max-w-[1600px]">
       <div className="flex flex-wrap items-center justify-between gap-5">
         <div>
           <h1 className="page-title">Calendar</h1>
@@ -330,7 +330,7 @@ export default function CalendarPage() {
           ))}
         </div>
       </div>
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="calendar-toolbar mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -532,7 +532,7 @@ export default function CalendarPage() {
           )}
           {view === "Month" && (
             <div className="overflow-x-auto">
-              <div className="grid min-w-[560px] grid-cols-7">
+              <div className="calendar-month-grid grid min-w-[560px] grid-cols-7">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                   <div
                     key={d}
@@ -626,7 +626,7 @@ export default function CalendarPage() {
               }}
             >
               <aside
-                className="surface-card fixed inset-x-2 sm:inset-x-4 top-16 sm:top-20 bottom-2 z-40 flex flex-col overflow-hidden rounded-2xl p-0 shadow-2xl xl:static xl:max-h-[760px] xl:shadow-none"
+                className="calendar-editor surface-card fixed inset-x-2 sm:inset-x-4 top-16 sm:top-20 bottom-2 z-40 flex flex-col overflow-hidden rounded-2xl p-0 shadow-2xl xl:static xl:max-h-[760px] xl:shadow-none"
                 aria-label="Event editor"
               >
                 <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] p-5">

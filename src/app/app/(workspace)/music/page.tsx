@@ -18,8 +18,6 @@ import {
   Leaf,
   Lightning,
   Playlist,
-  Repeat,
-  Shuffle,
   SkipBack,
   SkipForward,
   SpeakerHigh,
@@ -42,12 +40,12 @@ export default function MusicPage() {
   const [error, setError] = useState("");
   const [mood, setMood] = useState("All");
   const [liked, setLiked] = useState(false);
-  const [volume, setVolume] = useState(80);
+  const { volume, setVolume } = music;
   const [dragging, setDragging] = useState(false);
   const [showAllCurated, setShowAllCurated] = useState(false);
 
   const activeTrackTitle = music.externalTrack?.title ?? music.tracks[music.index]?.name;
-  const isPlaying = !!music.externalTrack || music.tracks.length > 0;
+  const isPlaying = !!music.externalTrack || music.playing;
   const visibleTracks = mood === "All"
     ? CURATED_TRACKS
     : CURATED_TRACKS.filter((track) => track.category.toLowerCase() === mood.toLowerCase());
@@ -70,7 +68,7 @@ export default function MusicPage() {
     if (music.externalTrack) {
       music.stopExternalTrack();
     } else if (music.tracks.length > 0) {
-      music.pause();
+      music.togglePlayback();
     } else if (CURATED_TRACKS.length > 0) {
       toggleCuratedTrack(CURATED_TRACKS[0]);
     }
@@ -106,12 +104,12 @@ export default function MusicPage() {
           ? "music-youtube"
           : "music-curated";
     requestAnimationFrame(() =>
-      document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      document.getElementById(target)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" }),
     );
   }
 
   return (
-    <div className="workspace workspace--wide music-refresh">
+    <div className="workspace workspace--wide music-refresh" data-source={tab}>
       {/* Hero Banner with Mascot Artwork & Benefits */}
       <div className="music-hero relative flex flex-wrap items-start justify-between gap-6 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-gradient-to-r from-[#F0F7FF] via-[#E4EFFF] to-[#CDE2FD] p-6 sm:p-8 shadow-xs">
         <div className="relative z-10 max-w-[620px]">
@@ -212,9 +210,9 @@ export default function MusicPage() {
       <div className="music-toolbar mt-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 rounded-2xl bg-[var(--surface-subtle)] p-1 border border-[var(--border-subtle)]">
           {[
+            { id: "Curated music", icon: MusicNotes },
             { id: "Local files", icon: UploadSimple },
             { id: "YouTube audio", icon: Play },
-            { id: "Curated music", icon: Sparkle },
           ].map(({ id, icon: Icon }) => (
             <button
               key={id}
@@ -252,6 +250,7 @@ export default function MusicPage() {
               <button
                 type="button"
                 onClick={() => setLiked(!liked)}
+                disabled={!activeTrackTitle}
                 aria-label={liked ? "Unlike track" : "Like track"}
                 className="text-[var(--text-tertiary)] hover:text-rose-500 transition-colors cursor-pointer"
               >
@@ -260,65 +259,22 @@ export default function MusicPage() {
             </div>
 
             <h2 className="font-display mt-1 line-clamp-1 text-2xl font-black text-[var(--text-primary)]">
-              {activeTrackTitle ?? "Focus Flow"}
+              {activeTrackTitle ?? "Choose your study music"}
             </h2>
             <p className="mt-0.5 text-xs font-bold text-[var(--text-secondary)]">
-              {music.externalTrack?.category ?? (music.tracks.length ? "Local Playlist" : "Chillhop Essentials")}
+              {music.externalTrack?.category ?? (music.tracks.length ? "Local playlist" : "Play a curated stream or add your own audio.")}
             </p>
 
-            {/* Vibe Tags */}
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <span className="rounded-full bg-[var(--fetch-blue-50)] px-3 py-0.5 text-[11px] font-extrabold text-[var(--fetch-blue-700)]">
-                Lo-fi
-              </span>
-              <span className="rounded-full bg-[var(--surface-subtle)] px-3 py-0.5 text-[11px] font-extrabold text-[var(--text-secondary)]">
-                Focus
-              </span>
-              <span className="rounded-full bg-[var(--surface-subtle)] px-3 py-0.5 text-[11px] font-extrabold text-[var(--text-secondary)]">
-                Instrumental
-              </span>
-            </div>
-
-            {/* Decorative Waveform Graphic */}
-            <div className="mt-5">
-              <div
-                className="music-waveform flex h-10 items-center gap-1 overflow-hidden"
-                aria-hidden="true"
-              >
-                {Array.from({ length: 42 }, (_, index) => {
-                  const heights = [12, 18, 26, 32, 20, 14, 28, 36, 24, 16, 30, 22];
-                  const barH = heights[index % heights.length];
-                  return (
-                    <i
-                      key={index}
-                      className={cn(
-                        "w-1 rounded-full transition-all",
-                        index < 18 ? "bg-[#1068E9]" : "bg-[var(--border-strong)]",
-                      )}
-                      style={{ height: `${barH}px` }}
-                    />
-                  );
-                })}
+            {music.tracks.length > 0 && !music.externalTrack && (
+              <div className="music-seek mt-4">
+                <input type="range" aria-label="Track position" min={0} max={music.duration || 1} step={0.1} value={Math.min(music.currentTime, music.duration || 1)} onChange={event => music.seek(Number(event.target.value))} disabled={!music.duration} />
+                <div className="flex justify-between text-xs text-[var(--text-secondary)]"><span>{Math.floor(music.currentTime / 60)}:{String(Math.floor(music.currentTime % 60)).padStart(2, "0")}</span><span>{Math.floor(music.duration / 60)}:{String(Math.floor(music.duration % 60)).padStart(2, "0")}</span></div>
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px] font-mono font-bold text-[var(--text-tertiary)]">
-                <span>1:42</span>
-                <span className="text-[10px] text-[var(--text-tertiary)] font-sans">
-                  Decorative visualizer · Audio via dock
-                </span>
-                <span>3:56</span>
-              </div>
-            </div>
-
+            )}
             {/* Audio Controls Bar */}
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4">
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  aria-label="Shuffle"
-                  className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-                >
-                  <Shuffle size={18} weight="bold" />
-                </button>
+
                 <button
                   type="button"
                   onClick={handlePrevTrack}
@@ -330,7 +286,7 @@ export default function MusicPage() {
                 <button
                   type="button"
                   onClick={handleMainPlayToggle}
-                  aria-label={isPlaying ? "Pause music" : "Play music"}
+                  aria-label={music.externalTrack ? "Stop music stream" : isPlaying ? "Pause music" : "Play music"}
                   className="flex size-11 items-center justify-center rounded-full bg-[#1068E9] text-white shadow-md hover:bg-[#0D57C5] transition-transform active:scale-95 cursor-pointer"
                 >
                   {isPlaying ? <Pause size={20} weight="fill" /> : <Play size={20} weight="fill" className="ml-0.5" />}
@@ -343,13 +299,7 @@ export default function MusicPage() {
                 >
                   <SkipForward size={20} weight="fill" />
                 </button>
-                <button
-                  type="button"
-                  aria-label="Repeat"
-                  className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-                >
-                  <Repeat size={18} weight="bold" />
-                </button>
+
               </div>
 
               {/* Volume Slider */}
@@ -362,6 +312,7 @@ export default function MusicPage() {
                   value={volume}
                   onChange={(e) => setVolume(Number(e.target.value))}
                   aria-label="Volume level"
+                  disabled={!music.tracks.length || !!music.externalTrack}
                   className="h-1.5 w-20 sm:w-24 cursor-pointer accent-[#1068E9]"
                 />
               </div>

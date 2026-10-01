@@ -560,7 +560,7 @@ export function FlashcardStudyView({
               autoFocus
             />
             <Button type="submit" disabled={!typedAnswer.trim() || submitting}>
-              Check answer <ArrowRight size={24} />
+              <span>Check answer</span> <ArrowRight size={24} />
             </Button>
           </div>
         </form>

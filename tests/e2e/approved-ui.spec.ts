@@ -47,7 +47,7 @@ async function deckBoundary(page: Page, single = false) {
 }
 
 async function openManualDeck(page: Page) {
-  await page.goto("/app/home");
+  await page.goto("/app/home#add-material");
   await page.getByRole("radio", { name: /Flashcards/ }).click();
   await page.getByRole("button", { name: "Create Manual Deck" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -411,6 +411,8 @@ test("Pomodoro controls preserve countdown across navigation and refresh", async
 }) => {
   await page.clock.install();
   await page.goto("/app/pomodoro");
+  const settings = page.getByRole("button", { name: "Timer settings", exact: true });
+  if (await settings.isVisible()) await settings.click();
   await page.getByLabel("Focus duration (minutes)").fill("1");
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await page.clock.fastForward(10_000);
@@ -420,7 +422,7 @@ test("Pomodoro controls preserve countdown across navigation and refresh", async
   await expect(page.getByRole("timer")).toHaveText("00:50");
   await page.getByRole("button", { name: "Resume", exact: true }).click();
   await page
-    .getByRole("link", { name: /Music Studio/ })
+    .getByRole("link", { name: /Music(?: Studio)?/ })
     .filter({ visible: true })
     .first()
     .click();
@@ -457,6 +459,7 @@ test("local music plays, seeks, switches tracks and persists across navigation",
 }) => {
   await page.goto("/app/music");
   const samples = 8000 * 8;
+  await page.getByRole("button", { name: "Local files", exact: true }).click();
   const wav = Buffer.alloc(44 + samples * 2);
   wav.write("RIFF");
   wav.writeUInt32LE(36 + samples * 2, 4);
@@ -475,6 +478,12 @@ test("local music plays, seeks, switches tracks and persists across navigation",
     { name: "Break.wav", mimeType: "audio/wav", buffer: wav },
   ]);
   const audio = page.locator("audio");
+  await page.getByRole("button", { name: "Play music", exact: true }).click();
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false);
+  await page.getByRole("button", { name: "Pause music", exact: true }).click();
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true);
+  await page.getByLabel("Volume level").press("Home");
+  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume)).toBe(0);
   await audio.evaluate(async (el: HTMLAudioElement) => {
     await el.play();
   });
@@ -490,13 +499,14 @@ test("local music plays, seeks, switches tracks and persists across navigation",
     await audio.evaluate((el: HTMLAudioElement) => el.currentTime),
   ).toBeGreaterThanOrEqual(2);
   expect(await audio.evaluate((el: HTMLAudioElement) => el.volume)).toBe(0.4);
+  await expect(page.getByLabel("Volume level")).toHaveValue("40");
   const dock = page.getByRole("region", { name: "Now playing", exact: true });
   await dock.getByRole("button", { name: "Next track" }).click();
   await expect(dock).toContainText("Break.wav");
   await dock.getByRole("button", { name: "Previous track" }).click();
   const src = await audio.getAttribute("src");
   await page
-    .getByRole("link", { name: /Pomodoro Timer/ })
+    .getByRole("link", { name: /Pomodoro(?: Timer)?/ })
     .filter({ visible: true })
     .first()
     .click();
@@ -532,7 +542,7 @@ test("YouTube and curated music keep the persistent external player", async ({
     /youtube-nocookie\.com\/embed\/M7lc1UVf-VE/,
   );
   await page
-    .getByRole("link", { name: /Pomodoro Timer/ })
+    .getByRole("link", { name: /Pomodoro(?: Timer)?/ })
     .filter({ visible: true })
     .first()
     .click();

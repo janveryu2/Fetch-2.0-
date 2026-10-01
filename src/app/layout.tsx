@@ -1,8 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import "./workspace-refresh.css";
 import "./approved-ui.css";
+import "./mobile-ui.css";
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 const nunito = localFont({
   src: "../../public/fonts/Nunito-variable.ttf",
