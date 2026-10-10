@@ -12,8 +12,11 @@ test("landing and authentication entry render cleanly", async ({ page }) => {
   expect(errors.filter((error) => !error.includes("/_next/hmr"))).toEqual([]);
 });
 
-test("development learning workflow creates and opens a pack", async ({ page }) => {
+test("development learning workflow creates and opens a pack", async ({ page, isMobile }) => {
   await page.goto("/app/home");
+  if (isMobile) {
+    await page.getByRole("button", { name: "Add study material" }).click();
+  }
   await page.getByRole("tab", { name: /paste text/i }).click();
   await page.getByLabel(/studypack name/i).fill("Biology essentials");
   await page.getByLabel(/study material/i).fill("Photosynthesis converts light energy into chemical energy in plants. Chlorophyll absorbs light most strongly in the blue and red portions of the visible spectrum. Carbon dioxide and water help plants produce glucose and oxygen. These reactions support growth and store energy for later use.");

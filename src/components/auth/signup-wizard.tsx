@@ -107,6 +107,7 @@ export function SignupWizard({ authConfigured }: { authConfigured: boolean }) {
           alt={step === 3 ? "FETCH celebrating account setup" : "FETCH welcoming a new learner"}
           width={150}
           height={150}
+          priority
           className="pixel-art mx-auto w-[120px]"
         />
         <h1 className="font-display mt-3 text-center text-3xl font-semibold">{stepCopy[step][0]}</h1>

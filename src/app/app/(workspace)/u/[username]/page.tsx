@@ -82,10 +82,10 @@ export default function UserProfilePage({ params }: PageProps) {
     if (!profile?.id || !profile.canMessage) return;
     setMessaging(true);
     try {
-      const res = await fetch("/api/messages/conversations", {
+      const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ friendId: profile.id }),
+        body: JSON.stringify({ participantId: profile.id }),
       });
 
       if (!res.ok) {
@@ -94,7 +94,11 @@ export default function UserProfilePage({ params }: PageProps) {
       }
 
       const data = await res.json();
-      router.push(`/app/messages?conversationId=${data.id}`);
+      const convId = data.conversation?.id || data.id;
+      if (!convId) {
+        throw new Error("Could not find or create conversation.");
+      }
+      router.push(`/app/messages?conversationId=${convId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open conversation.");
       setMessaging(false);

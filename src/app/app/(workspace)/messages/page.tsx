@@ -516,6 +516,7 @@ export default function MessagesPage() {
                     alt="FETCH ready"
                     width={140}
                     height={140}
+                    priority
                     className="pixel-art mx-auto w-[100px] sm:w-[130px]"
                   />
                   <h3 className="font-display mt-3 text-lg sm:text-xl font-semibold">

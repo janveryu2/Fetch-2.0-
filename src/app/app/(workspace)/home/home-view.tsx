@@ -312,7 +312,7 @@ export function HomeView({ displayName, initialAuthSignal }: HomeViewProps) {
               </div>
             </section>
           </div>
-          <div className="home-create-panel min-w-0" data-expanded={materialOpen}>
+          <div id="add-material" className="home-create-panel min-w-0" data-expanded={materialOpen}>
             <button type="button" className="home-material-toggle" aria-expanded={materialOpen} aria-controls="home-material-form" onClick={() => setMaterialOpen(!materialOpen)}>
               <Stack size={22} /> {materialOpen ? "Close material editor" : "Add study material"}<CaretRight size={18} />
             </button>

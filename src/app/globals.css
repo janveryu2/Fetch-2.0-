@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
   --fetch-blue-50: #f2f7ff;
   --fetch-blue-100: #e3efff;

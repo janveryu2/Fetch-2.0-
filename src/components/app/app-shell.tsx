@@ -295,7 +295,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           type="button"
           disabled={signingOut}
           onClick={() => void signOut()}
-          className="fetch-nav-link flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-60"
+          className="fetch-nav-link flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-[var(--danger)] hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-60"
         >
           <NavArtwork name="Sign out" size={24} />
           <span className="flex-1">{signingOut ? "Signing out…" : mode === "account" ? "Sign out" : "Exit demo"}</span>

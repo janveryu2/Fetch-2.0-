@@ -35,7 +35,7 @@ export function ForgotPasswordForm({ authConfigured }: { authConfigured: boolean
 
   return (
     <div className="surface-card w-full max-w-[470px] p-7 text-center sm:p-9">
-      <Image src="/assets/mascot/fetch-seated.png" alt="FETCH waiting while you recover access" width={160} height={160} className="pixel-art mx-auto w-[135px]" />
+      <Image src="/assets/mascot/fetch-seated.png" alt="FETCH waiting while you recover access" width={160} height={160} className="pixel-art mx-auto w-[135px]" priority />
       <h1 className="font-display mt-3 text-3xl font-semibold">Reset your password</h1>
       <p className="mt-2 text-[var(--text-secondary)]">Enter your email. If an account exists, we’ll send recovery instructions.</p>
       {sent ? (

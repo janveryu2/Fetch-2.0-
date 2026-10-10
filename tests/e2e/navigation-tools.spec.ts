@@ -8,14 +8,15 @@ test.describe("Phase 4: Navigation and Secondary Tools", () => {
     // Only run sidebar check on desktop viewport where aside is rendered
     if (isMobile) return;
 
-    await page.goto("/app/home");
+    await page.goto("/app/progress");
 
-    // 1. Without packs, shortcut links to #add-material
-    const sidebarShortcut = page.locator("aside").getByRole("link", { name: "Start studying" });
+    // 1. Sidebar shortcut links to current study destination
+    const sidebarShortcut = page.locator(".fetch-sidebar").getByRole("link", { name: /(Start|Resume) studying/ });
     await expect(sidebarShortcut).toBeVisible();
-    await expect(sidebarShortcut).toHaveAttribute("href", "/app/home#add-material");
+    await expect(sidebarShortcut).toHaveAttribute("href", /(\/app\/study\/|\/app\/home#add-material)/);
 
     // 2. Create a study pack
+    await page.goto("/app/home");
     await page.getByLabel("StudyPack name").fill("Physics Kinematics");
     await page
       .getByLabel(/Paste your study material/)
@@ -40,18 +41,22 @@ test.describe("Phase 4: Navigation and Secondary Tools", () => {
     }
     await page.getByRole("button", { name: "Check answer" }).click();
 
-    // 5. Navigate to another page (e.g. Home) and check the shortcut label
-    await page.goto("/app/home");
-    const resumeShortcut = page.locator("aside").getByRole("link", { name: "Resume studying" });
+    // 5. Navigate to another page (e.g. Progress) and check the shortcut label
+    await page.goto("/app/progress");
+    const resumeShortcut = page.locator(".fetch-sidebar").getByRole("link", { name: "Resume studying" });
     await expect(resumeShortcut).toBeVisible();
     await expect(resumeShortcut).toHaveAttribute("href", /\/app\/study\//);
   });
 
   test("StudyPacks list state reflects in URL query/sort and restores on Back", async ({
     page,
+    isMobile,
   }) => {
     // Create two packs first
     await page.goto("/app/home");
+    if (isMobile) {
+      await page.getByRole("button", { name: "Add study material" }).click();
+    }
     await page.getByLabel("StudyPack name").fill("Astronomy Stars");
     await page
       .getByLabel(/Paste your study material/)

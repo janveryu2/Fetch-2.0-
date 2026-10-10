@@ -82,6 +82,7 @@ export default function ProgressPage() {
             alt="FETCH cheering you on"
             width={150}
             height={150}
+            priority
             className="pixel-art"
           />
           <div>

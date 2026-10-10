@@ -248,7 +248,7 @@ export default function PomodoroPage() {
           </div>
 
           <div className="pomodoro-mobile-art" aria-hidden="true">
-            <Image src="/assets/backgrounds/pomodoro-timer.webp" alt="" width={1586} height={992} sizes="(max-width: 1279px) 360px, 1px" />
+            <Image src="/assets/backgrounds/pomodoro-timer.webp" alt="" width={1586} height={992} sizes="(max-width: 1279px) 360px, 1px" priority />
           </div>
 
           {/* Action Buttons Row */}
@@ -270,7 +270,7 @@ export default function PomodoroPage() {
                 type="button"
                 disabled={!ready}
                 onClick={timer.endAt ? pauseTimer : startTimer}
-                className="flex min-w-[140px] items-center justify-center gap-2 rounded-full bg-[#1068E9] px-7 py-3 text-sm font-black text-white shadow-md hover:bg-[#0D57C5] transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                className="flex min-w-[140px] items-center justify-center gap-2 rounded-full bg-[#1068E9] px-7 py-3 text-sm font-black text-white shadow-md hover:bg-[#0D57C5] transition-all active:scale-95 cursor-pointer disabled:bg-[#0d57c5] disabled:text-white disabled:cursor-not-allowed"
               >
                 {timer.endAt ? (
                   <>

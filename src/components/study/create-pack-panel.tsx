@@ -37,7 +37,7 @@ export function CreatePackPanel() {
     { id: "paste", label: "Paste text", status: "Available", icon: NotePencil },
     {
       id: "pdf",
-      label: "Upload file",
+      label: "PDF",
       status: mode === "account" ? "Available" : "Sign in",
       icon: FilePdf,
     },

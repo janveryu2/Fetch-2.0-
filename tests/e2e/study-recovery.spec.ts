@@ -3,9 +3,13 @@ import { expect, test } from "@playwright/test";
 test.describe("Study session draft recovery and progress recommendations", () => {
   test("recovers an interrupted quiz session after page reload and updates progress recommendation", async ({
     page,
+    isMobile,
   }) => {
     // 1. Create a pack via Home
     await page.goto("/app/home");
+    if (isMobile) {
+      await page.getByRole("button", { name: "Add study material" }).click();
+    }
     await page.getByLabel("StudyPack name").fill("Chemistry Fundamentals");
     await page
       .getByLabel(/Paste your study material/)

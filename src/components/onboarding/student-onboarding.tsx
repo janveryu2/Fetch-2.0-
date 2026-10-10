@@ -233,6 +233,7 @@ export function StudentOnboarding({
           alt="FETCH welcoming you"
           width={130}
           height={130}
+          priority
           className="pixel-art mx-auto w-[100px]"
         />
 

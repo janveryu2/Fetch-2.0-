@@ -327,7 +327,7 @@ export default function LivePage() {
             <div><CheckCircle size={24} /><span><strong>Learn together</strong><small>With friends by your side</small></span></div>
           </div>
         </div>
-        <Image src="/assets/mascot/fetch-active.png" alt="FETCH ready for a challenge" width={240} height={240} className="pixel-art live-hero-mascot" />
+        <Image src="/assets/mascot/fetch-active.png" alt="FETCH ready for a challenge" width={240} height={240} className="pixel-art live-hero-mascot" priority />
       </header>
       {mode !== "account" && <p className="notice mt-5">Sign in to create rooms and study live with friends. <Link href="/app/start" className="underline">Sign in</Link></p>}
       {activeRoomId && !roomState && <p role="status" className="notice mt-5">Loading your room… <Button variant="quiet" onClick={() => void fetchRoomState(activeRoomId)}>Retry loading</Button><Button variant="quiet" onClick={leaveRoom} disabled={loading}>Leave Room</Button></p>}

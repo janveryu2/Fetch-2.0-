@@ -401,6 +401,7 @@ export function StudySession({ packId }: { packId: string }) {
           width={180}
           height={180}
           className="pixel-art mx-auto"
+          priority
         />
         <h1 className="font-display mt-5 text-3xl font-semibold">
           Resume your study session?

@@ -163,6 +163,7 @@ export default function MusicPage() {
             width={2172}
             height={724}
             sizes="(max-width: 767px) 100vw, 1px"
+            priority
           />
         </div>
         <Button asChild variant="secondary">

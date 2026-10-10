@@ -137,6 +137,7 @@ function StudyPacksContent() {
             width={150}
             height={150}
             className="pixel-art"
+            priority
           />
           <div>
             <h2 className="font-display text-2xl font-semibold">
@@ -271,7 +272,7 @@ export default function StudyPacksPage() {
         <div className="workspace">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="page-title">Your StudyPacks</h1>
+              <div className="page-title font-display text-3xl font-semibold">Your StudyPacks</div>
               <p className="page-description">
                 Keep your learning materials organized and ready whenever you are.
               </p>

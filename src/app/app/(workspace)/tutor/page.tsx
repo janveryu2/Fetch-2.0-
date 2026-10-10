@@ -312,6 +312,7 @@ export default function TutorPage() {
               alt="FETCH, your learning companion"
               width={120}
               height={120}
+              priority
               className="pixel-art mx-auto w-[90px] sm:w-[120px]"
             />
             <h2 className="font-display mt-3 text-2xl font-semibold sm:text-3xl">

@@ -25,8 +25,12 @@ test.describe("Phase 5: Accessibility and System Consistency (WCAG 2.2 AA)", () 
 
   test("material intake tablist supports keyboard arrow navigation", async ({
     page,
+    isMobile,
   }) => {
     await page.goto("/app/home");
+    if (isMobile) {
+      await page.getByRole("button", { name: "Add study material" }).click();
+    }
 
     // Focus the first tab
     const pasteTab = page.getByRole("tab", { name: /Paste text/i });

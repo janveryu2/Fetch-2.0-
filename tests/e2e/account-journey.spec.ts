@@ -6,7 +6,7 @@ test.describe("Phase 14: Full Account & Workspace Journeys", () => {
   }) => {
     // 1. Home
     await page.goto("/app/home");
-    await expect(page.getByRole("heading", { name: /ready to learn|what are we learning/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /good (morning|afternoon|evening)/i })).toBeVisible();
 
     // 2. Progress
     await page.goto("/app/progress");

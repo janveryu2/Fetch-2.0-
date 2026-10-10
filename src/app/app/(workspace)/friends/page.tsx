@@ -49,7 +49,9 @@ export default function FriendsPage() {
   const { mode } = useDemo();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
-  const [userProfile, setUserProfile] = useState<{ username?: string | null } | null>(null);
+  const [userProfile, setUserProfile] = useState<{ username?: string | null } | null>(() =>
+    mode === "account" ? null : { username: "fetch_student" }
+  );
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [incoming, setIncoming] = useState<FriendRequestItem[]>([]);
   const [outgoing, setOutgoing] = useState<FriendRequestItem[]>([]);
@@ -58,7 +60,11 @@ export default function FriendsPage() {
   const [loading, setLoading] = useState(mode === "account");
 
   const loadSocialData = useCallback(async () => {
-    if (mode !== "account") return;
+    if (mode !== "account") {
+      setUserProfile({ username: "fetch_student" });
+      setLoading(false);
+      return;
+    }
     try {
       const [friendsRes, requestsRes, profileRes] = await Promise.all([
         fetch("/api/friends"),
@@ -411,6 +417,7 @@ export default function FriendsPage() {
                   alt="FETCH waving to a future study buddy"
                   width={150}
                   height={150}
+                  priority
                   className="pixel-art mx-auto"
                 />
                 <h3 className="font-display mt-4 text-xl font-semibold">
