@@ -478,3 +478,49 @@
   .music-media-copy strong { font-size: 12px; }
   .music-media-copy small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Keep the approved scenes fully legible while the controls use the available width. */
+@media (min-width: 600px) and (max-width: 1279px) {
+  .pomodoro-refresh .pomodoro-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    justify-items: center;
+    gap: 12px 20px;
+    min-height: 0;
+  }
+  .pomodoro-modes, .pomodoro-actions, .pomodoro-stage > p:last-child { grid-column: 1 / -1; }
+  .pomodoro-stage .pomodoro-dial { grid-column: 1; width: min(100%, 288px); aspect-ratio: 1; margin: 0; }
+  .pomodoro-dial > svg { width: 100%; height: 100%; }
+  .pomodoro-mobile-art { grid-column: 2; max-width: 100%; margin: 0; }
+  .pomodoro-stage .pomodoro-actions { display: flex; flex-wrap: wrap; width: 100%; margin: 0; }
+  .pomodoro-stage .pomodoro-actions > button:first-child { flex: 1 1 180px; }
+  .pomodoro-stage > div:last-of-type { margin-top: 0; }
+  .pomodoro-stage > p:last-child { margin-top: 0; }
+  .music-refresh .music-hero { aspect-ratio: 3 / 1; min-height: 0; background-size: cover; background-position: center; }
+  .music-main { align-items: start; }
+  .music-refresh .music-player { flex-direction: row; min-height: 0; }
+  .music-now-art { width: clamp(112px, 15vw, 160px); }
+  .music-media-play .music-artwork img { object-fit: contain; }
+}
+
+@media (min-width: 600px) and (max-width: 1023px) {
+  .pomodoro-layout, .music-main { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 599px) {
+  .pomodoro-refresh .pomodoro-stage { gap: 0; }
+  .pomodoro-stage .pomodoro-dial { margin: 10px 0; }
+  .pomodoro-dial > svg { width: min(208px, 64vw); height: min(208px, 64vw); }
+  .pomodoro-dial [role="timer"] { font-size: clamp(42px, 13vw, 50px); }
+  .pomodoro-mobile-art { width: min(100%, 272px); margin: 0 auto 12px; }
+  .pomodoro-stage > div:last-of-type { margin-top: 0; }
+  .pomodoro-stage .pomodoro-actions { gap: 8px; }
+  .pomodoro-stage .pomodoro-actions > button { min-height: 44px; }
+  .music-refresh .music-hero { background-image: none; }
+  .music-hero-art img { aspect-ratio: 9 / 4; object-fit: cover; object-position: 75% center; }
+  .music-refresh .music-player { min-height: 0; aspect-ratio: auto; background-image: none; }
+  .music-now-art { width: 84px; }
+  .music-now-art img, .music-media-play .music-artwork img { object-fit: contain; }
+  .music-transport { gap: 12px; }
+}

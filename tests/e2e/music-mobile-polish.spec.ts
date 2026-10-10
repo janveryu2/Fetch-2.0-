@@ -237,7 +237,7 @@ test("YouTube minimizes by pausing, resumes, moves and survives route changes", 
   await expect(frame).toHaveCount(0);
 });
 
-test("headings have no painted backings and compact timer artwork fits above controls", async ({
+test("headings stay clear and responsive artwork fits beside or below the timer", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop");
@@ -247,7 +247,7 @@ test("headings have no painted backings and compact timer artwork fits above con
       (value) => localStorage.setItem("fetch-theme", value),
       theme,
     );
-    for (const width of [360, 390, 768, 834, 1024, 1194, 1440]) {
+    for (const width of [360, 390, 430, 600, 768, 834, 900, 1024, 1194, 1440]) {
       await page.setViewportSize({ width, height: 960 });
       await page.goto("/app/home");
       const greeting = page.locator(".home-topbar");
@@ -274,8 +274,11 @@ test("headings have no painted backings and compact timer artwork fits above con
         const actions = (await page
           .locator(".pomodoro-actions")
           .boundingBox())!;
-        expect(image.y).toBeGreaterThanOrEqual(timer.y + timer.height);
-        expect(image.y + image.height).toBeLessThan(actions.y);
+        if (width < 600)
+          expect(image.y).toBeGreaterThanOrEqual(timer.y + timer.height);
+        else expect(image.x).toBeGreaterThanOrEqual(timer.x + timer.width);
+        expect(actions.y).toBeGreaterThanOrEqual(image.y + image.height);
+        expect(actions.y).toBeGreaterThanOrEqual(timer.y + timer.height);
       } else await expect(art).toBeHidden();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth),
@@ -287,6 +290,14 @@ test("headings have no painted backings and compact timer artwork fits above con
           (element) => getComputedStyle(element).backgroundColor,
         ),
       ).toBe("rgba(0, 0, 0, 0)");
+      const player = page.locator(".music-player");
+      const playerArt = page.locator(".music-now-art img");
+      await expect(playerArt).toBeVisible();
+      const playerBounds = (await player.boundingBox())!;
+      const artBounds = (await playerArt.boundingBox())!;
+      expect(artBounds.x + artBounds.width).toBeLessThanOrEqual(playerBounds.x + playerBounds.width);
+      expect(artBounds.y + artBounds.height).toBeLessThanOrEqual(playerBounds.y + playerBounds.height);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     }
   }
 });
